@@ -151,7 +151,7 @@ export function FloatingCardWindow() {
   }, [updateHeight]);
 
   const mask = useCallback(
-    (value?: string | null) => (privacyModeEnabled ? maskSensitiveValue(value || '') : value || ''),
+    (value?: string | null) => maskSensitiveValue(value, privacyModeEnabled),
     [privacyModeEnabled],
   );
 

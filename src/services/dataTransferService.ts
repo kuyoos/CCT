@@ -627,6 +627,8 @@ function synthesizeAccountImportResult(importedCount: number): AccountTransferIm
       {
         platform: 'codex',
         imported_count: importedCount,
+        expected_count: importedCount,
+        status: importedCount > 0 ? 'success' : 'failed',
         skipped: false,
       },
     ],
@@ -745,7 +747,13 @@ export async function importDataTransferJson(
     total: 1,
     platform: 'codex',
     status: 'success',
+    current_platform: null,
+    completed_platforms: 1,
+    total_platforms: 1,
+    processed_accounts: importedCount,
+    total_accounts: importedCount,
     detail: accountResult.details[0],
+    details: accountResult.details,
   });
 
   return {
