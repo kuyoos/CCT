@@ -7199,11 +7199,6 @@ export function CodexAccountsPage() {
     ],
   );
 
-  const sortedAccountsForInstances = useMemo(
-    () => [...accounts].sort(compareAccountsBySort),
-    [accounts, compareAccountsBySort],
-  );
-
   const filteredAccounts = useMemo(() => {
     let result = [...overviewAccounts];
     if (searchQuery.trim()) {
