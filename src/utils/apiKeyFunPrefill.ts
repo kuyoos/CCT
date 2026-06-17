@@ -2,7 +2,7 @@ import type { Page } from '../types/navigation';
 
 export const APIKEY_FUN_PREFILL_EVENT = 'app:apikey-fun-prefill';
 
-export type ApiKeyFunPrefillTarget = 'codex' | 'claude_cli';
+export type ApiKeyFunPrefillTarget = 'codex';
 
 export interface ApiKeyFunPrefillPayload {
   target: ApiKeyFunPrefillTarget;
@@ -16,8 +16,8 @@ export interface ApiKeyFunPrefillPayload {
 
 let pendingPrefill: ApiKeyFunPrefillPayload | null = null;
 
-export function getApiKeyFunPrefillPage(target: ApiKeyFunPrefillTarget): Page {
-  return target === 'codex' ? 'codex' : 'claude-cli';
+export function getApiKeyFunPrefillPage(_target: ApiKeyFunPrefillTarget): Page {
+  return 'codex';
 }
 
 export function dispatchApiKeyFunPrefillEvent(payload: ApiKeyFunPrefillPayload): void {

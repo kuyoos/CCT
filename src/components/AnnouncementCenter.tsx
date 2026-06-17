@@ -17,13 +17,8 @@ interface AnnouncementCenterProps {
 
 const TAB_TARGET_PAGE_MAP: Partial<Record<string, Page>> = {
   dashboard: 'dashboard',
-  overview: 'overview',
   codex: 'codex',
-  'github-copilot': 'github-copilot',
-  windsurf: 'windsurf',
-  kiro: 'kiro',
-  wakeup: 'wakeup',
-  instances: 'instances',
+  'codex-api-service': 'codex-api-service',
   settings: 'settings',
 };
 

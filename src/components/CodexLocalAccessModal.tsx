@@ -1066,7 +1066,7 @@ export function CodexLocalAccessModal({
     presentation: ReturnType<typeof buildCodexAccountPresentation>,
     limit = 2,
   ) => {
-    const quotaLines = buildQuotaPreviewLines(presentation.quotaItems, limit);
+    const quotaLines = buildQuotaPreviewLines(presentation.quotaItems).slice(0, limit);
     if (quotaLines.length === 0) {
       return null;
     }

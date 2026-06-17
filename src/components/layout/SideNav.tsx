@@ -1,4 +1,5 @@
 import { Settings } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Page } from '../../types/navigation';
 import { CodexIcon } from '../icons/CodexIcon';
@@ -11,7 +12,7 @@ interface SideNavProps {
 interface NavItem {
   id: Page;
   label: string;
-  icon: JSX.Element;
+  icon: ReactNode;
 }
 
 export function SideNav({ page, setPage }: SideNavProps) {

@@ -1,4 +1,3 @@
-import { CodexAccount } from '../types/codex';
 import * as codexService from './codexService';
 
 export const ACCOUNT_TRANSFER_SCHEMA = 'cockpit-tools.codex-account-transfer';
@@ -7,6 +6,8 @@ export const ACCOUNT_TRANSFER_VERSION = 1;
 export interface AccountTransferImportProgressDetail {
   platform: 'codex';
   imported_count: number;
+  expected_count: number;
+  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped';
   skipped: boolean;
   error?: string;
 }
@@ -16,7 +17,13 @@ export interface AccountTransferImportProgress {
   total: number;
   platform: 'codex';
   status: 'importing' | 'success' | 'error';
+  current_platform: 'codex' | null;
+  completed_platforms: number;
+  total_platforms: number;
+  processed_accounts: number;
+  total_accounts: number;
   detail?: AccountTransferImportProgressDetail;
+  details: AccountTransferImportProgressDetail[];
 }
 
 export interface AccountTransferImportResult {
@@ -100,11 +107,25 @@ export async function importAllAccountsFromTransferJson(
   const payload = readCodexImportPayload(parsed);
   const total = countCodexAccounts(payload);
 
+  const runningDetail: AccountTransferImportProgressDetail = {
+    platform: 'codex',
+    imported_count: 0,
+    expected_count: total,
+    status: 'running',
+    skipped: false,
+  };
   options?.onProgress?.({
     current: 0,
     total,
     platform: 'codex',
     status: 'importing',
+    current_platform: 'codex',
+    completed_platforms: 0,
+    total_platforms: 1,
+    processed_accounts: 0,
+    total_accounts: total,
+    detail: runningDetail,
+    details: [runningDetail],
   });
 
   try {
@@ -113,6 +134,8 @@ export async function importAllAccountsFromTransferJson(
     const detail: AccountTransferImportProgressDetail = {
       platform: 'codex',
       imported_count: importedCount,
+      expected_count: total,
+      status: 'success',
       skipped: false,
     };
     options?.onProgress?.({
@@ -120,7 +143,13 @@ export async function importAllAccountsFromTransferJson(
       total: 1,
       platform: 'codex',
       status: 'success',
+      current_platform: null,
+      completed_platforms: 1,
+      total_platforms: 1,
+      processed_accounts: importedCount,
+      total_accounts: total,
       detail,
+      details: [detail],
     });
     return {
       imported_count: importedCount,
@@ -133,6 +162,8 @@ export async function importAllAccountsFromTransferJson(
     const detail: AccountTransferImportProgressDetail = {
       platform: 'codex',
       imported_count: 0,
+      expected_count: total,
+      status: 'failed',
       skipped: false,
       error: String(error).replace(/^Error:\s*/, ''),
     };
@@ -141,7 +172,13 @@ export async function importAllAccountsFromTransferJson(
       total: 1,
       platform: 'codex',
       status: 'error',
+      current_platform: null,
+      completed_platforms: 1,
+      total_platforms: 1,
+      processed_accounts: 0,
+      total_accounts: total,
       detail,
+      details: [detail],
     });
     return {
       imported_count: 0,

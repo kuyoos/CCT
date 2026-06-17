@@ -175,7 +175,7 @@ export function FloatingCardWindow() {
     setMessage(null);
     try {
       if (instanceContext?.instanceId && boundInstance) {
-        await updateInstance(instanceContext.instanceId, { ...boundInstance, accountId });
+        await updateInstance({ instanceId: instanceContext.instanceId, bindAccountId: accountId });
       } else {
         await switchAccount(accountId);
       }

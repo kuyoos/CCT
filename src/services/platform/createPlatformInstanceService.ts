@@ -7,20 +7,7 @@ import {
 } from "../../types/instance";
 import type { CodexAppSpeed } from "../../types/codex";
 
-type PlatformInstanceCommandPrefix =
-  | ""
-  | "codex"
-  | "claude"
-  | "github_copilot"
-  | "windsurf"
-  | "kiro"
-  | "cursor"
-  | "gemini"
-  | "codebuddy"
-  | "codebuddy_cn"
-  | "qoder"
-  | "trae"
-  | "workbuddy";
+type PlatformInstanceCommandPrefix = "codex";
 
 type InstancePayload = {
   name: string;

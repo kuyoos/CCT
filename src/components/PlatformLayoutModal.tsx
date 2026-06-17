@@ -445,12 +445,12 @@ export function PlatformLayoutModal({
       if (!group) {
         continue;
       }
-      const defaultPlatformId = resolveEntryDefaultPlatformId(entryId, platformGroups);
+      const defaultPlatformId = resolveEntryDefaultPlatformId(entryId);
       if (!defaultPlatformId) {
         continue;
       }
 
-      const visiblePlatformIds = resolveEntryPlatformIds(entryId, platformGroups).filter(isMenuVisiblePlatform);
+      const visiblePlatformIds = resolveEntryPlatformIds(entryId).filter(isMenuVisiblePlatform);
       if (visiblePlatformIds.length === 0) {
         continue;
       }

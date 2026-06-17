@@ -13,22 +13,7 @@ export type AccountSyncEventPayload = {
 };
 
 const PROVIDER_PAGE_PLATFORM_MAP: Record<string, PlatformId> = {
-  antigravity: 'antigravity',
   codex: 'codex',
-  claude: 'claude',
-  zed: 'zed',
-  githubcopilot: 'github-copilot',
-  github_copilot: 'github-copilot',
-  windsurf: 'windsurf',
-  kiro: 'kiro',
-  cursor: 'cursor',
-  gemini: 'gemini',
-  codebuddy: 'codebuddy',
-  codebuddycn: 'codebuddy_cn',
-  codebuddy_cn: 'codebuddy_cn',
-  qoder: 'qoder',
-  trae: 'trae',
-  workbuddy: 'workbuddy',
 };
 
 function normalizePlatformKey(value: string): string {

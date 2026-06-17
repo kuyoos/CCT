@@ -183,7 +183,7 @@ export function CodexInstancesContent({
     }
 
     const presentation = resolvePresentation(account);
-    const lines = buildQuotaPreviewLines(presentation.quotaItems, 3);
+    const lines = buildQuotaPreviewLines(presentation.quotaItems).slice(0, 3);
     if (lines.length === 0) {
       return (
         <span className="account-quota-empty">

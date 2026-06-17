@@ -143,13 +143,13 @@ const BREAKOUT_HISTORY_STORAGE_KEY = 'agtools.breakout.history';
 const BREAKOUT_HISTORY_LIMIT = 200;
 const BREAKOUT_DROP_ICON_ASSIGN_STORAGE_KEY = 'agtools.breakout.drop_icon_assign.v1';
 const PLATFORM_LAYOUT_STORAGE_KEY = 'agtools.platform_layout.v1';
-const FALLBACK_PLATFORM_ICON_ORDER: PlatformId[] = ['antigravity', 'codex', 'github-copilot', 'windsurf'];
+const FALLBACK_PLATFORM_ICON_ORDER: PlatformId[] = ['codex'];
 
 const BASE_DROP_ICON_MAP: DropIconMap = {
-  split: 'windsurf',
+  split: 'codex',
   triple: 'codex',
-  expand: 'antigravity',
-  shield: 'github-copilot',
+  expand: 'codex',
+  shield: 'codex',
 };
 const BASE_DROP_ICON_PLATFORM_IDS = Object.values(BASE_DROP_ICON_MAP) as PlatformId[];
 

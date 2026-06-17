@@ -7,20 +7,7 @@ export interface AccountsOverviewFilterPersistenceChangedDetail {
 }
 
 const QUICK_SETTINGS_SCOPE_MAP: Record<string, string> = {
-  antigravity: 'antigravity',
   codex: 'codex',
-  claude: 'claude',
-  github_copilot: 'githubcopilot',
-  windsurf: 'windsurf',
-  kiro: 'kiro',
-  cursor: 'cursor',
-  gemini: 'gemini',
-  codebuddy: 'codebuddy',
-  codebuddy_cn: 'codebuddy_cn',
-  qoder: 'qoder',
-  trae: 'trae',
-  workbuddy: 'workbuddy',
-  zed: 'zed',
 };
 
 function getScopeBase(scope: string): string {
