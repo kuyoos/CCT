@@ -100,9 +100,9 @@ async function ensureLanguageResources(lang: string): Promise<string> {
 
 function getSavedLanguage(): string {
   try {
-    return resolveSupportedLanguage(localStorage.getItem('app-language') || 'en');
+    return resolveSupportedLanguage(localStorage.getItem('app-language') || 'zh-cn');
   } catch {
-    return 'en';
+    return 'zh-cn';
   }
 }
 

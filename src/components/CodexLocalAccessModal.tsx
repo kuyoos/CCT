@@ -303,7 +303,7 @@ export function CodexLocalAccessModal({
   const [filterTypes, setFilterTypes] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [groupFilter, setGroupFilter] = useState<string[]>([]);
-  const [restrictFreeAccounts, setRestrictFreeAccounts] = useState(true);
+  const [restrictFreeAccounts, setRestrictFreeAccounts] = useState(false);
   const [membersDraftDirty, setMembersDraftDirty] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -528,7 +528,7 @@ export function CodexLocalAccessModal({
 
     return summary;
   }, [collection?.accountIds, localAccessAccounts, state?.accountHealth]);
-  const initialRestrictFreeAccounts = collection?.restrictFreeAccounts ?? true;
+  const initialRestrictFreeAccounts = collection?.restrictFreeAccounts ?? false;
   const normalizedInitialSelectedIds = useMemo(() => {
     const accountById = new Map(
       localAccessAccounts.map((account) => [account.id, account]),
@@ -944,7 +944,7 @@ export function CodexLocalAccessModal({
   const selectionDirty = useMemo(
     () =>
       !areSetsEqual(selected, new Set(normalizedInitialSelectedIds)) ||
-      restrictFreeAccounts !== (collection?.restrictFreeAccounts ?? true),
+      restrictFreeAccounts !== (collection?.restrictFreeAccounts ?? false),
     [
       collection?.restrictFreeAccounts,
       normalizedInitialSelectedIds,

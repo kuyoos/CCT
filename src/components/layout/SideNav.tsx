@@ -37,32 +37,31 @@ export function SideNav({ page, setPage }: SideNavProps) {
   ];
 
   return (
-    <aside className="side-nav side-nav-codex-only">
-      <div className="side-nav-brand">
-        <button
-          type="button"
-          className="side-nav-logo"
-          onClick={() => setPage('codex')}
-          aria-label="Cockpit Codex"
-        >
-          <CodexIcon size={22} />
-        </button>
-        <div className="side-nav-brand-text">
-          <span className="side-nav-title">Cockpit Codex</span>
-          <span className="side-nav-subtitle">Codex Tools</span>
+    <aside className="side-nav side-nav-classic side-nav-codex-only">
+      <div className="nav-brand">
+        <div className="side-nav-brand-main">
+          <button
+            type="button"
+            className="brand-logo"
+            onClick={() => setPage('codex')}
+            aria-label="Cockpit Codex"
+          >
+            <CodexIcon size={22} />
+          </button>
+          <div className="side-nav-brand-title">Cockpit Codex</div>
         </div>
       </div>
 
-      <nav className="side-nav-items" aria-label={t('nav.main', '主导航')}>
+      <nav className="nav-items nav-items-no-scroll" aria-label={t('nav.main', '主导航')}>
         {items.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={`side-nav-item ${page === item.id ? 'active' : ''}`}
+            className={`nav-item ${page === item.id ? 'active' : ''}`}
             onClick={() => setPage(item.id)}
           >
             <span className="nav-item-icon">{item.icon}</span>
-            <span className="nav-item-label">{item.label}</span>
+            <span className="nav-item-text">{item.label}</span>
           </button>
         ))}
       </nav>

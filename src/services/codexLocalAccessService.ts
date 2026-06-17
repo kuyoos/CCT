@@ -30,7 +30,9 @@ export async function saveCodexLocalAccessAccounts(
 ): Promise<CodexLocalAccessState> {
   return await invoke("codex_local_access_save_accounts", {
     accountIds,
+    account_ids: accountIds,
     restrictFreeAccounts,
+    restrict_free_accounts: restrictFreeAccounts,
   });
 }
 

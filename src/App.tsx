@@ -1,9 +1,11 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTranslation } from 'react-i18next';
 import './App.css';
 import { SideNav } from './components/layout/SideNav';
+import { changeLanguage } from './i18n';
 import type { Page } from './types/navigation';
 
 const CodexAccountsPage = lazy(() =>
@@ -22,6 +24,22 @@ const FloatingCardWindow = lazy(() =>
 function MainApp() {
   const { t } = useTranslation();
   const [page, setPage] = useState<Page>('codex');
+
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<{ language?: string }>('get_general_config')
+      .then((config) => {
+        if (!cancelled && config?.language) {
+          void changeLanguage(config.language);
+        }
+      })
+      .catch(() => {
+        // keep bootstrap language
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;

@@ -637,15 +637,16 @@ export function CodexApiServicePage() {
     }, [stats, statsRange]);
   const totals = selectedStatsWindow?.totals;
   const memberIds = collection?.accountIds ?? [];
-  const localAccessAccounts = useMemo(() => accounts, [accounts]);
+  const accountById = useMemo(
+    () => new Map(accounts.map((account) => [account.id, account])),
+    [accounts],
+  );
   const memberAccounts = useMemo(
     () =>
       memberIds
-        .map((accountId) =>
-          localAccessAccounts.find((account) => account.id === accountId),
-        )
+        .map((accountId) => accountById.get(accountId))
         .filter((account): account is CodexAccount => Boolean(account)),
-    [memberIds, localAccessAccounts],
+    [memberIds, accountById],
   );
   const accountModelRuleCount = collection?.accountModelRules.length ?? 0;
   const accountModelRuleAllSelected =
@@ -659,6 +660,11 @@ export function CodexApiServicePage() {
     state?.accountHealth.forEach((item) => next.set(item.accountId, item));
     return next;
   }, [state?.accountHealth]);
+  const statsByAccountId = useMemo(() => {
+    const next = new Map<string, NonNullable<CodexLocalAccessStatsWindow>["accounts"][number]>();
+    selectedStatsWindow?.accounts.forEach((item) => next.set(item.accountId, item));
+    return next;
+  }, [selectedStatsWindow?.accounts]);
   const quotaPoolSummary = useMemo(
     () => summarizeCodexQuotaPool(memberAccounts),
     [memberAccounts],
@@ -2372,11 +2378,6 @@ export function CodexApiServicePage() {
       icon: <Users className="tab-icon" />,
     },
     {
-      key: "models",
-      label: t("codex.apiService.tabs.models", "模型与能力"),
-      icon: <Image className="tab-icon" />,
-    },
-    {
       key: "logs",
       label: t("codex.apiService.tabs.logs", "统计与日志"),
       icon: <Activity className="tab-icon" />,
@@ -3214,9 +3215,7 @@ export function CodexApiServicePage() {
                       t,
                     );
                     const health = healthByAccountId.get(account.id);
-                    const stat = selectedStatsWindow?.accounts.find(
-                      (item) => item.accountId === account.id,
-                    );
+                    const stat = statsByAccountId.get(account.id);
                     const disabledModelCount =
                       parseModelRuleText(
                         accountModelRuleDrafts[account.id] ?? "",
@@ -3612,9 +3611,7 @@ export function CodexApiServicePage() {
                       t,
                     );
                     const health = healthByAccountId.get(account.id);
-                    const stat = selectedStatsWindow?.accounts.find(
-                      (item) => item.accountId === account.id,
-                    );
+                    const stat = statsByAccountId.get(account.id);
                     return (
                       <div
                         key={account.id}

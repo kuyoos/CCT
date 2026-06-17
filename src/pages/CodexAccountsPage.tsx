@@ -112,15 +112,11 @@ import {
   CodexOverviewTabsHeader,
   CodexTab,
 } from "../components/CodexOverviewTabsHeader";
-import { CodexInstancesContent } from "./CodexInstancesPage";
-import { CodexSessionManager } from "../components/codex/CodexSessionManager";
 import {
   buildCodexSessionVisibilityInitialProgress,
   CodexSessionVisibilityRepairProgressView,
   createCodexSessionVisibilityRepairRunId,
 } from "../components/codex/CodexSessionVisibilityRepairModal";
-import { CodexWakeupContent } from "../components/codex/CodexWakeupContent";
-import { CodexModelProviderManager } from "../components/codex/CodexModelProviderManager";
 import { CodexSpeedSelect } from "../components/codex/CodexSpeedSelect";
 import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
 import { useProviderAccountsPage } from "../hooks/useProviderAccountsPage";
@@ -797,7 +793,6 @@ export function CodexAccountsPage() {
   const sponsorModule = useSponsorStore((state) => state.state.sponsorModule);
   const fetchSponsorState = useSponsorStore((state) => state.fetchState);
   const [activeTab, setActiveTab] = useState<CodexTab>("overview");
-  const [wakeupPresetManagerSignal, setWakeupPresetManagerSignal] = useState(0);
   const untaggedKey = "__untagged__";
   const [filterTypes, setFilterTypes] = useState<string[]>(() =>
     readAccountsOverviewFilterPersistenceEnabled(CODEX_FILTER_PERSISTENCE_SCOPE)
@@ -6245,7 +6240,7 @@ export function CodexAccountsPage() {
     ) => {
       setLocalAccessSaving(true);
       try {
-        const restrictFreeAccounts = options?.restrictFreeAccounts ?? true;
+        const restrictFreeAccounts = options?.restrictFreeAccounts ?? false;
         const filteredAccountIds =
           accountIds.length === 0
             ? []
@@ -6290,7 +6285,7 @@ export function CodexAccountsPage() {
           localAccessCollection.accountIds.filter((id) => id !== accountId),
           {
             restrictFreeAccounts:
-              localAccessCollection.restrictFreeAccounts ?? true,
+              localAccessCollection.restrictFreeAccounts ?? false,
           },
         );
       } catch (error) {
@@ -10305,7 +10300,7 @@ export function CodexAccountsPage() {
       <CodexOverviewTabsHeader
         active={activeTab}
         onTabChange={setActiveTab}
-        tabs={["overview", "providers", "wakeup", "instances", "sessions"]}
+        tabs={["overview"]}
       />
 
       {batchImportOpen && (
@@ -13826,37 +13821,6 @@ export function CodexAccountsPage() {
             onAdded={reloadCodexGroups}
           />
         </>
-      )}
-
-      {activeTab === "instances" && (
-        <CodexInstancesContent
-          accountsForSelect={sortedAccountsForInstances}
-          onLaunchCredentialChange={handleCodexInstanceLaunchCredentialChange}
-        />
-      )}
-
-      {activeTab === "sessions" && <CodexSessionManager />}
-
-      {activeTab === "providers" && (
-        <CodexModelProviderManager
-          accounts={accounts}
-          onProvidersChanged={setManagedProviders}
-          onManageModelPresets={() => {
-            setActiveTab("wakeup");
-            setWakeupPresetManagerSignal((value) => value + 1);
-          }}
-        />
-      )}
-
-      {activeTab === "wakeup" && (
-        <CodexWakeupContent
-          accounts={accounts}
-          openPresetManagerSignal={wakeupPresetManagerSignal}
-          onRefreshAccounts={async () => {
-            await fetchAccounts();
-            await fetchCurrentAccount();
-          }}
-        />
       )}
 
       {apiSwitchNoticeContext && (

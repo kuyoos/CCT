@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { changeLanguage, getCurrentLanguage } from '../i18n';
+import { changeLanguage, getCurrentLanguage, normalizeLanguage } from '../i18n';
 import './settings/Settings.css';
 
 type GeneralConfig = {
@@ -45,7 +45,7 @@ export function SettingsPage() {
     }
   };
 
-  const language = config.language || getCurrentLanguage();
+  const language = normalizeLanguage(config.language || getCurrentLanguage());
   const codexAppPath = config.codex_app_path || '';
   const codexLaunchOnSwitch = config.codex_launch_on_switch !== false;
 
@@ -67,7 +67,7 @@ export function SettingsPage() {
             disabled={saving}
             onChange={(event) => void saveConfig({ ...config, language: event.target.value })}
           >
-            <option value="zh-CN">简体中文</option>
+            <option value="zh-cn">简体中文</option>
             <option value="en">English</option>
           </select>
         </div>
