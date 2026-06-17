@@ -6,4 +6,3 @@ pub mod group;
 pub mod logs;
 pub mod remote_config;
 pub mod system;
-pub mod update;

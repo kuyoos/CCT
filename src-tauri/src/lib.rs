@@ -165,17 +165,15 @@ pub fn run() {
                 modules::webkit_cache_maintenance::checkpoint_webkit_localstorage();
             });
 
-            // 初始化 Updater 插件
+            // 初始化桌面插件
             #[cfg(desktop)]
             {
-                app.handle()
-                    .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
                 app.handle().plugin(tauri_plugin_autostart::init(
                     tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                     None::<Vec<&'static str>>,
                 ))?;
-                info!("[Updater] Tauri Updater + Process 插件已初始化");
+                info!("[Desktop] Process + Autostart 插件已初始化");
             }
 
             // 启动时同步设置合并（移至后台线程，不阻塞窗口显示）
@@ -410,17 +408,6 @@ pub fn run() {
             // Logs Commands
             commands::logs::logs_get_snapshot,
             commands::logs::logs_open_log_directory,
-            // Update Commands
-            commands::update::should_check_updates,
-            commands::update::update_last_check_time,
-            commands::update::get_update_settings,
-            commands::update::save_update_settings,
-            commands::update::save_pending_update_notes,
-            commands::update::check_version_jump,
-            commands::update::get_release_history,
-            commands::update::update_log,
-            commands::update::get_update_runtime_info,
-            commands::update::install_linux_update,
             // Announcement Commands
             commands::announcement::announcement_get_state,
             commands::announcement::announcement_mark_as_read,

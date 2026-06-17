@@ -31,9 +31,6 @@ chrono = "0.4"
 dirs = "5.0"
 reqwest = { version = "0.12", features = ["json", "gzip", "brotli", "deflate", "zstd", "stream", "socks"] }
 quick-xml = "0.40"
-# 为 tauri-plugin-updater 所依赖的 reqwest 0.13 合并 socks 特性，
-# 使 updater 链路在全局代理配置为 socks5:// 时可正常发起请求。
-reqwest_updater_socks = { package = "reqwest", version = "0.13", default-features = false, features = ["socks"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
 tracing-appender = "0.2"
@@ -83,4 +80,3 @@ objc2-app-kit = "0.3.2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-process = "2.3.1"
-tauri-plugin-updater = "2.10.0"
