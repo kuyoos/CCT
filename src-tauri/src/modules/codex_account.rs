@@ -8514,6 +8514,8 @@ pub struct CodexQuotaAlertPayload {
 }
 
 fn dispatch_codex_quota_alert(payload: &CodexQuotaAlertPayload) {
+    use tauri::Emitter;
+
     if let Some(app) = crate::get_app_handle() {
         if let Err(err) = app.emit("quota:threshold_triggered", payload) {
             logger::log_warn(&format!("[QuotaAlert][Codex] 发送预警事件失败: {}", err));

@@ -158,6 +158,10 @@ pub fn update_tray_menu<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), Str
     Ok(())
 }
 
+pub fn create_tray_skeleton<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
+    create_tray(app)
+}
+
 pub fn create_tray<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
     let mut builder = TrayIconBuilder::with_id(TRAY_ID).on_tray_icon_event(handle_tray_event);
 

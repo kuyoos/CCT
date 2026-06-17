@@ -1,4 +1,4 @@
-use crate::modules::{account, codex_account, codex_local_access, logger, process};
+use crate::modules::{codex_account, codex_local_access, config, logger, process};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -559,7 +559,7 @@ fn ensure_gpt_5_5_model_preset(state: &mut CodexWakeupState) -> bool {
 }
 
 fn data_dir() -> Result<PathBuf, String> {
-    account::get_data_dir()
+    config::get_data_dir()
 }
 
 fn tasks_path() -> Result<PathBuf, String> {

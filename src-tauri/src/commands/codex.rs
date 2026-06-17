@@ -1033,7 +1033,7 @@ const CODEX_MODEL_PROVIDER_TEST_TIMEOUT_SECS: u64 = 20;
 
 #[tauri::command]
 pub async fn load_codex_account_groups() -> Result<String, String> {
-    let path = account::get_data_dir()?.join(CODEX_GROUPS_FILE);
+    let path = config::get_data_dir()?.join(CODEX_GROUPS_FILE);
     if !path.exists() {
         return Ok("[]".to_string());
     }
@@ -1042,7 +1042,7 @@ pub async fn load_codex_account_groups() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn save_codex_account_groups(data: String) -> Result<(), String> {
-    let dir = account::get_data_dir()?;
+    let dir = config::get_data_dir()?;
     if !dir.exists() {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir: {}", e))?;
     }
@@ -1052,7 +1052,7 @@ pub async fn save_codex_account_groups(data: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn load_codex_model_providers() -> Result<String, String> {
-    let path = account::get_data_dir()?.join(CODEX_MODEL_PROVIDERS_FILE);
+    let path = config::get_data_dir()?.join(CODEX_MODEL_PROVIDERS_FILE);
     if !path.exists() {
         return Ok("[]".to_string());
     }
@@ -1062,7 +1062,7 @@ pub async fn load_codex_model_providers() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn save_codex_model_providers(data: String) -> Result<(), String> {
-    let dir = account::get_data_dir()?;
+    let dir = config::get_data_dir()?;
     if !dir.exists() {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir: {}", e))?;
     }
