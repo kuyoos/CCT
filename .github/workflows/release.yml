@@ -1,0 +1,447 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon
+          - platform: "macos-latest"
+            args: "--target aarch64-apple-darwin"
+          # macOS Intel
+          - platform: "macos-latest"
+            args: "--target x86_64-apple-darwin"
+          # macOS Universal (同时支持 Intel 和 Apple Silicon)
+          - platform: "macos-latest"
+            args: "--target universal-apple-darwin"
+          # Linux x86_64
+          - platform: "ubuntu-22.04"
+            args: ""
+          # Linux ARM64
+          - platform: "ubuntu-24.04-arm"
+            args: ""
+          # Windows x86_64
+          - platform: "windows-latest"
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config libsoup-3.0-dev javascriptcoregtk-4.1 libjavascriptcoregtk-4.1-dev
+          sudo apt-get install -y libnm-dev xdg-utils
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Go setup
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: sidecars/cockpit-cliproxy/go.mod
+          cache-dependency-path: sidecars/cockpit-cliproxy/go.sum
+
+      - name: Node.js setup
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Sync versions
+        run: npm run sync-version
+
+      - name: Read app version
+        id: app_version
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          VERSION="$(node -e "console.log(require(require('path').join(process.env.GITHUB_WORKSPACE, 'package.json')).version)")"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag matches version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          EXPECTED_TAG="v${{ steps.app_version.outputs.VERSION }}"
+          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]; then
+            echo "Tag (${GITHUB_REF_NAME}) does not match package.json version (${EXPECTED_TAG})."
+            exit 1
+          fi
+
+      - name: Build bilingual release notes from changelog
+        id: release_notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.app_version.outputs.VERSION }}"
+
+          extract_section() {
+            local file="$1"
+            local version="$2"
+
+            awk -v version="$version" '
+              BEGIN {
+                capture = 0
+                found = 0
+              }
+
+              /^## / {
+                if (capture) {
+                  exit
+                }
+                if ($0 ~ ("^## \\[" version "\\][[:space:]]*-.*$") || $0 ~ ("^## \\[v" version "\\][[:space:]]*-.*$")) {
+                  capture = 1
+                  found = 1
+                }
+              }
+
+              capture {
+                if ($0 ~ /^---[[:space:]]*$/) {
+                  exit
+                }
+                print
+              }
+
+              END {
+                if (!found) {
+                  exit 2
+                }
+              }
+            ' "$file"
+          }
+
+          if ! zh_section="$(extract_section CHANGELOG.zh-CN.md "$VERSION")"; then
+            echo "Missing changelog section for version $VERSION in CHANGELOG.zh-CN.md"
+            exit 1
+          fi
+
+          if ! en_section="$(extract_section CHANGELOG.md "$VERSION")"; then
+            echo "Missing changelog section for version $VERSION in CHANGELOG.md"
+            exit 1
+          fi
+
+          {
+            echo "body<<EOF"
+            echo "## 更新日志（中文）"
+            echo
+            printf '%s\n' "$zh_section"
+            echo
+            echo "## Changelog (English)"
+            echo
+            printf '%s\n' "$en_section"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: "v${{ steps.app_version.outputs.VERSION }}"
+          releaseName: "Cockpit Tools v${{ steps.app_version.outputs.VERSION }}"
+          releaseBody: ${{ steps.release_notes.outputs.body }}
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  rebuild-latest-json:
+    name: Rebuild merged latest.json
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Node.js setup
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Determine version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Download release assets (retry)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          TAG="v${VERSION}"
+          downloaded="false"
+          for i in $(seq 1 30); do
+            if gh release download "$TAG" --dir release-assets --pattern "*" --clobber; then
+              downloaded="true"
+              echo "Downloaded release assets from $TAG"
+              break
+            fi
+            echo "Release assets not ready yet (attempt $i/30). Sleeping 10s..."
+            sleep 10
+          done
+          if [ "$downloaded" != "true" ]; then
+            echo "Failed to download release assets from $TAG after retries."
+            exit 1
+          fi
+
+      - name: Read release metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "v${VERSION}" --json body --jq '.body' > release-notes.md
+          PUBLISHED_AT="$(gh release view "v${VERSION}" --json publishedAt,createdAt --jq '.publishedAt // .createdAt')"
+          if [ -z "${PUBLISHED_AT}" ] || [ "${PUBLISHED_AT}" = "null" ]; then
+            PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          fi
+          echo "PUBLISHED_AT=${PUBLISHED_AT}" >> "$GITHUB_ENV"
+
+      - name: Build merged latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/build_merged_latest_json.cjs \
+            --version "${VERSION}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --assets-dir "release-assets" \
+            --notes-file "release-notes.md" \
+            --published-at "${PUBLISHED_AT}" \
+            --output "latest.json"
+
+      - name: Validate merged latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .platforms["darwin-aarch64"] and
+            .platforms["darwin-x86_64"] and
+            .platforms["windows-x86_64"] and
+            .platforms["windows-x86_64-nsis"] and
+            .platforms["linux-x86_64-appimage"] and
+            .platforms["linux-x86_64-deb"] and
+            .platforms["linux-x86_64-rpm"] and
+            .platforms["linux-aarch64-appimage"] and
+            .platforms["linux-aarch64-deb"] and
+            .platforms["linux-aarch64-rpm"]
+          ' latest.json > /dev/null
+          jq -r '.platforms | keys[]' latest.json
+
+      - name: Upload merged latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "v${VERSION}" latest.json --clobber
+
+  upload-checksums:
+    name: Upload SHA256SUMS
+    needs:
+      - release
+      - rebuild-latest-json
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Determine version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Download release assets (retry)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          TAG="v${VERSION}"
+          downloaded="false"
+          for i in $(seq 1 30); do
+            if gh release download "$TAG" --dir release-assets --pattern "*" --clobber; then
+              downloaded="true"
+              echo "Downloaded release assets from $TAG"
+              break
+            fi
+            echo "Release assets not ready yet (attempt $i/30). Sleeping 10s..."
+            sleep 10
+          done
+          if [ "$downloaded" != "true" ]; then
+            echo "Failed to download release assets from $TAG after retries."
+            exit 1
+          fi
+
+      - name: Generate SHA256SUMS.txt from release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          rm -f SHA256SUMS.txt
+          find . -type f -print0 \
+            | sort -z \
+            | while IFS= read -r -d '' file; do
+                shasum -a 256 "$file"
+              done \
+            | sed 's#  \./#  #' \
+            > ../SHA256SUMS.txt
+          cd ..
+          test -s SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload SHA256SUMS.txt to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "v${VERSION}" SHA256SUMS.txt --clobber
+
+  update-homebrew-cask:
+    name: Update Homebrew Cask
+    needs:
+      - release
+      - rebuild-latest-json
+      - upload-checksums
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Update the cask on main, not on the tag ref.
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Determine version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Download universal DMG from GitHub Releases (retry)
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/Cockpit.Tools_${VERSION}_universal.dmg"
+          echo "Downloading: $URL"
+          for i in $(seq 1 30); do
+            if curl -fL --retry 3 --retry-delay 1 -o cockpit-tools.dmg "$URL"; then
+              exit 0
+            fi
+            echo "Asset not ready yet (attempt $i/30). Sleeping 10s..."
+            sleep 10
+          done
+          echo "Failed to download release asset after retries."
+          exit 1
+
+      - name: Compute sha256
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA256="$(sha256sum cockpit-tools.dmg | awk '{print $1}')"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+
+      - name: Update Cask file
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="Casks/cockpit-tools.rb"
+          if [ ! -f "$FILE" ]; then
+            echo "Missing $FILE. Create it first."
+            exit 1
+          fi
+
+          perl -0777 -i -pe \
+            's/version \"[^\"]+\"/version \"'"$VERSION"'\"/; s/sha256 \"[0-9a-f]{64}\"/sha256 \"'"$SHA256"'\"/' \
+            "$FILE"
+
+          git diff -- "$FILE"
+
+      - name: Create pull request
+        id: create_cask_pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(homebrew): update cask for v${{ env.VERSION }}"
+          title: "chore(homebrew): update cask for v${{ env.VERSION }}"
+          body: |
+            Auto-generated by the release workflow.
+
+            - version: ${{ env.VERSION }}
+            - sha256 (universal.dmg): ${{ env.SHA256 }}
+          branch: "automation/update-cask-v${{ env.VERSION }}"
+          base: main
+          delete-branch: true
+
+      - name: Enable auto-merge for cask PR
+        if: ${{ steps.create_cask_pr.outputs.pull-request-number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ steps.create_cask_pr.outputs.pull-request-number }}"
+          PR_BRANCH="$(gh pr view "$PR_NUMBER" --json headRefName --jq .headRefName)"
+          if [[ "$PR_BRANCH" != automation/update-cask-v* ]]; then
+            echo "Unexpected PR branch: $PR_BRANCH"
+            exit 1
+          fi
+          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch
+
+  publish-release:
+    name: Publish release as latest
+    needs:
+      - release
+      - rebuild-latest-json
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Determine version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease=false --latest
