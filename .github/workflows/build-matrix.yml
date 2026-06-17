@@ -52,46 +52,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: "macos-aarch64"
-            platform: "macos-latest"
-            args: "--target aarch64-apple-darwin"
-            release_dir: "target/aarch64-apple-darwin/release"
-          - label: "macos-x86_64"
-            platform: "macos-latest"
-            args: "--target x86_64-apple-darwin"
-            release_dir: "target/x86_64-apple-darwin/release"
-          - label: "macos-universal"
-            platform: "macos-latest"
-            args: "--target universal-apple-darwin"
-            release_dir: "target/universal-apple-darwin/release"
-          - label: "ubuntu-22.04"
-            platform: "ubuntu-22.04"
-            args: ""
-            release_dir: "target/release"
-          - label: "ubuntu-24.04-arm"
-            platform: "ubuntu-24.04-arm"
-            args: ""
-            release_dir: "target/release"
           - label: "windows-latest"
             platform: "windows-latest"
-            args: ""
-            release_dir: "target/release"
+            args: "--bundles nsis"
+            installer_path: "target/release/bundle/nsis/Cockpit Tools_*_x64-setup.exe"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies (Linux)
-        if: startsWith(matrix.platform, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config libsoup-3.0-dev javascriptcoregtk-4.1 libjavascriptcoregtk-4.1-dev
-          sudo apt-get install -y libnm-dev xdg-utils
-
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Go setup
         uses: actions/setup-go@v5
@@ -111,16 +82,20 @@ jobs:
       - name: Sync versions
         run: npm run sync-version
 
+      - name: Read app version
+        id: app_version
+        shell: bash
+        run: |
+          VERSION="$(node -e "console.log(require('./package.json').version)")"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Cache Tauri binary dependencies
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ matrix.platform == 'windows-latest' && 'C:\Users\runneradmin\AppData\Local\tauri' || '' }}
-            ${{ startsWith(matrix.platform, 'ubuntu') && '~/.cache/tauri' || '' }}
-            ${{ matrix.platform == 'macos-latest' && '~/Library/Caches/tauri' || '' }}
-          key: tauri-deps-${{ matrix.platform }}-${{ hashFiles('**/Cargo.toml') }}
+          path: C:\Users\runneradmin\AppData\Local\tauri
+          key: tauri-deps-windows-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: |
-            tauri-deps-${{ matrix.platform }}-
+            tauri-deps-windows-
 
       - name: Build app (pull request)
         if: github.event_name == 'pull_request'
@@ -202,12 +177,11 @@ jobs:
             build-${{ matrix.label }}.log
             warnings-${{ matrix.label }}.txt
 
-      - name: Upload bundles
+      - name: Upload Windows installer
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: bundles-${{ matrix.label }}
+          name: Cockpit Tools_${{ steps.app_version.outputs.VERSION }}_x64-setup.exe
           retention-days: 7
           if-no-files-found: error
-          path: |
-            ${{ matrix.release_dir }}/bundle
+          path: ${{ matrix.installer_path }}
