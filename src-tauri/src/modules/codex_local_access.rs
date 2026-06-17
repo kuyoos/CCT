@@ -8200,7 +8200,7 @@ fn configured_initial_local_access_port() -> Option<u16> {
         }
     }
 
-    if account::is_dev_profile() {
+    if config::is_dev_profile() {
         return Some(CODEX_LOCAL_ACCESS_DEV_DEFAULT_PORT);
     }
 
@@ -11054,7 +11054,6 @@ async fn spawn_provider_gateway_sidecar(
         .stderr(Stdio::piped());
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
 
