@@ -1067,7 +1067,8 @@ export function CodexAccountsPage() {
       exportAccounts: codexService.exportCodexAccounts,
     },
     getDisplayEmail: (account) => account.email ?? account.id,
-    defaultSortBy: readCodexCustomSortActive() ? "custom" : undefined,
+    defaultSortBy: readCodexCustomSortActive() ? "custom" : "hourly",
+    defaultSortDirection: "asc",
   });
 
   const {

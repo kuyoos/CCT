@@ -1243,6 +1243,131 @@
   color: var(--primary);
 }
 
+.codex-api-service-account-stats-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) auto auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.codex-api-service-account-stats-toolbar label,
+.codex-api-service-account-stats-direction {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.codex-api-service-account-stats-toolbar label > span,
+.codex-api-service-account-stats-direction > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.codex-api-service-account-stats-toolbar input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--codex-api-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  color: var(--text-primary);
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+
+.codex-api-service-account-stats-toolbar input:focus {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.codex-api-service-account-stats-direction > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 3px;
+  border: 1px solid var(--codex-api-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+}
+
+.codex-api-service-account-stats-direction button {
+  min-width: 44px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.codex-api-service-account-stats-direction button.active {
+  background: color-mix(in srgb, var(--primary) 11%, transparent);
+  color: var(--primary);
+}
+
+.codex-api-service-account-stats-card {
+  align-content: start;
+}
+
+.codex-api-service-account-quota-estimate {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--codex-api-border-soft));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-card));
+}
+
+.codex-api-service-account-quota-head,
+.codex-api-service-account-quota-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.codex-api-service-account-quota-head span,
+.codex-api-service-account-quota-detail span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.codex-api-service-account-quota-head strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.codex-api-service-account-quota-bar {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-tertiary) 78%, transparent);
+}
+
+.codex-api-service-account-quota-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--success) 72%, var(--primary)));
+  transition: width 0.18s ease;
+}
+
 .codex-api-service-log-list {
   display: grid;
   gap: 7px;
@@ -1694,7 +1819,8 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .codex-api-service-log-filters {
+  .codex-api-service-log-filters,
+  .codex-api-service-account-stats-toolbar {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -1752,7 +1878,8 @@
     grid-template-columns: 1fr;
   }
 
-  .codex-api-service-log-filters {
+  .codex-api-service-log-filters,
+  .codex-api-service-account-stats-toolbar {
     grid-template-columns: 1fr;
   }
 

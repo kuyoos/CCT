@@ -97,6 +97,18 @@ type RequestLogGatewayModeFilter = "all" | CodexLocalAccessGatewayMode;
 type BuiltinTimeoutPresetId = "long_wait" | "short_wait";
 type TimeoutPresetId = BuiltinTimeoutPresetId | string;
 
+type AccountStatsSortKey =
+  | "requestCount"
+  | "totalTokens"
+  | "inputTokens"
+  | "outputTokens"
+  | "estimatedCost"
+  | "successRate"
+  | "remainingTokens"
+  | "failures"
+  | "account";
+type AccountStatsSortDirection = "asc" | "desc";
+
 interface ApiKeyPolicyDraft {
   modelPrefix: string;
   allowedModels: string;
@@ -132,6 +144,12 @@ const REQUEST_LOG_PAGE_SIZE_STORAGE_KEY =
   "agtools.codex.api_service.request_log_page_size.v1";
 const REQUEST_LOG_PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 const FALLBACK_BASE_URL = "http://127.0.0.1:1455/v1";
+const ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT = 95;
+const ACCOUNT_ESTIMATED_REMAINING_TOKENS = 5_000_000;
+const ACCOUNT_ESTIMATED_TOTAL_TOKENS = Math.round(
+  ACCOUNT_ESTIMATED_REMAINING_TOKENS /
+    (ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT / 100),
+);
 
 function normalizeAddressKind(
   value: string | null | undefined,
@@ -209,6 +227,28 @@ function formatCompactNumber(value: number): string {
     notation: value >= 1000 ? "compact" : "standard",
     maximumFractionDigits: value >= 1000 ? 1 : 0,
   }).format(value || 0);
+}
+
+function formatTokenCount(value: number): string {
+  return new Intl.NumberFormat("en", {
+    notation: value >= 1_000_000 ? "compact" : "standard",
+    maximumFractionDigits: value >= 1_000_000 ? 2 : value >= 1000 ? 1 : 0,
+  }).format(Math.max(0, Math.round(value || 0)));
+}
+
+function estimateAccountRemainingTokens(
+  usage?: CodexLocalAccessUsageStats | null,
+): { remaining: number; used: number; percent: number } {
+  const used = Math.max(0, Math.round(usage?.totalTokens ?? 0));
+  const remaining = Math.max(0, ACCOUNT_ESTIMATED_REMAINING_TOKENS - used);
+  const percent = Math.max(
+    0,
+    Math.min(
+      ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT,
+      Math.round((remaining / ACCOUNT_ESTIMATED_TOTAL_TOKENS) * 100),
+    ),
+  );
+  return { remaining, used, percent };
 }
 
 function formatLatencyMs(value: number): string {
@@ -591,6 +631,11 @@ export function CodexApiServicePage() {
   const [requestLogAccountQuery, setRequestLogAccountQuery] = useState("");
   const [requestLogApiKeyQuery, setRequestLogApiKeyQuery] = useState("");
   const [requestLogErrorQuery, setRequestLogErrorQuery] = useState("");
+  const [accountStatsQuery, setAccountStatsQuery] = useState("");
+  const [accountStatsSortKey, setAccountStatsSortKey] =
+    useState<AccountStatsSortKey>("requestCount");
+  const [accountStatsSortDirection, setAccountStatsSortDirection] =
+    useState<AccountStatsSortDirection>("desc");
   const mountedRef = useRef(true);
   const testChatScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -664,6 +709,111 @@ export function CodexApiServicePage() {
     selectedStatsWindow?.accounts.forEach((item) => next.set(item.accountId, item));
     return next;
   }, [selectedStatsWindow?.accounts]);
+  const accountStatsSortOptions = useMemo(
+    () => [
+      {
+        value: "requestCount",
+        label: t("codex.apiService.accountStats.sortRequests", "请求数"),
+      },
+      {
+        value: "totalTokens",
+        label: t("codex.apiService.accountStats.sortTotalTokens", "Token 消耗"),
+      },
+      {
+        value: "inputTokens",
+        label: t("codex.apiService.accountStats.sortInputTokens", "输入 Token"),
+      },
+      {
+        value: "outputTokens",
+        label: t("codex.apiService.accountStats.sortOutputTokens", "输出 Token"),
+      },
+      {
+        value: "estimatedCost",
+        label: t("codex.apiService.accountStats.sortCost", "预估成本"),
+      },
+      {
+        value: "successRate",
+        label: t("codex.apiService.accountStats.sortSuccessRate", "成功率"),
+      },
+      {
+        value: "remainingTokens",
+        label: t("codex.apiService.accountStats.sortRemaining", "预估剩余"),
+      },
+      {
+        value: "failures",
+        label: t("codex.apiService.accountStats.sortFailures", "连续失败"),
+      },
+      {
+        value: "account",
+        label: t("codex.apiService.accountStats.sortAccount", "账号名"),
+      },
+    ] satisfies Array<{ value: AccountStatsSortKey; label: string }>,
+    [t],
+  );
+  const filteredSortedAccountStats = useMemo(() => {
+    const query = accountStatsQuery.trim().toLowerCase();
+    const accountValue = (
+      account: CodexAccount,
+      key: AccountStatsSortKey,
+    ): number | string => {
+      const usage = statsByAccountId.get(account.id)?.usage;
+      const health = healthByAccountId.get(account.id);
+      if (key === "requestCount") return usage?.requestCount ?? 0;
+      if (key === "totalTokens") return usage?.totalTokens ?? 0;
+      if (key === "inputTokens") return usage?.inputTokens ?? 0;
+      if (key === "outputTokens") return usage?.outputTokens ?? 0;
+      if (key === "estimatedCost") return usage?.estimatedCostUsd ?? 0;
+      if (key === "successRate") {
+        const requestCount = usage?.requestCount ?? 0;
+        return requestCount > 0 ? (usage?.successCount ?? 0) / requestCount : 0;
+      }
+      if (key === "remainingTokens") {
+        return estimateAccountRemainingTokens(usage).remaining;
+      }
+      if (key === "failures") return health?.consecutiveFailures ?? 0;
+      return buildCodexAccountPresentation(account, t).displayName.toLowerCase();
+    };
+
+    return memberAccounts
+      .filter((account) => {
+        if (!query) return true;
+        const presentation = buildCodexAccountPresentation(account, t);
+        return [
+          presentation.displayName,
+          presentation.planLabel,
+          account.email,
+          account.id,
+          account.account_name ?? "",
+          account.account_id ?? "",
+          account.account_note ?? "",
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      })
+      .sort((left, right) => {
+        const leftValue = accountValue(left, accountStatsSortKey);
+        const rightValue = accountValue(right, accountStatsSortKey);
+        let result = 0;
+        if (typeof leftValue === "string" || typeof rightValue === "string") {
+          result = String(leftValue).localeCompare(String(rightValue));
+        } else {
+          result = leftValue - rightValue;
+        }
+        if (result === 0) {
+          result = left.created_at - right.created_at;
+        }
+        return accountStatsSortDirection === "desc" ? -result : result;
+      });
+  }, [
+    accountStatsQuery,
+    accountStatsSortDirection,
+    accountStatsSortKey,
+    healthByAccountId,
+    memberAccounts,
+    statsByAccountId,
+    t,
+  ]);
   const quotaPoolSummary = useMemo(
     () => summarizeCodexQuotaPool(memberAccounts),
     [memberAccounts],
@@ -3585,75 +3735,220 @@ export function CodexApiServicePage() {
             </div>
 
             {statsLogTab === "accounts" && (
-              <div className="codex-api-service-account-grid codex-api-service-stats-account-grid">
-                {memberAccounts.length === 0 ? (
-                  <div className="codex-api-service-empty">
-                    {t("codex.localAccess.emptyMembers", "当前集合暂无账号")}
-                  </div>
-                ) : (
-                  memberAccounts.map((account) => {
-                    const presentation = buildCodexAccountPresentation(
-                      account,
-                      t,
-                    );
-                    const health = healthByAccountId.get(account.id);
-                    const stat = statsByAccountId.get(account.id);
-                    return (
-                      <div
-                        key={account.id}
-                        className="codex-api-service-account-card"
+              <>
+                <div className="codex-api-service-account-stats-toolbar">
+                  <label className="codex-api-service-account-stats-search">
+                    <span>
+                      {t("codex.apiService.accountStats.filter", "筛选账号")}
+                    </span>
+                    <input
+                      value={accountStatsQuery}
+                      onChange={(event) =>
+                        setAccountStatsQuery(event.target.value)
+                      }
+                      placeholder={t(
+                        "codex.apiService.accountStats.filterPlaceholder",
+                        "账号、邮箱、备注、套餐",
+                      )}
+                    />
+                  </label>
+                  <label className="codex-api-service-account-stats-sort">
+                    <span>
+                      {t("codex.apiService.accountStats.sortBy", "排序")}
+                    </span>
+                    <SingleSelectDropdown
+                      value={accountStatsSortKey}
+                      options={accountStatsSortOptions}
+                      onChange={(value) =>
+                        setAccountStatsSortKey(value as AccountStatsSortKey)
+                      }
+                      ariaLabel={t(
+                        "codex.apiService.accountStats.sortBy",
+                        "排序",
+                      )}
+                      menuWidth={180}
+                      menuMaxHeight={260}
+                    />
+                  </label>
+                  <div className="codex-api-service-account-stats-direction">
+                    <span>
+                      {t("codex.apiService.accountStats.direction", "顺序")}
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        className={
+                          accountStatsSortDirection === "desc" ? "active" : ""
+                        }
+                        onClick={() => setAccountStatsSortDirection("desc")}
                       >
-                        <div>
-                          <strong title={presentation.displayName}>
-                            {maskAccountText(presentation.displayName)}
-                          </strong>
-                          <span
-                            className={`tier-badge ${presentation.planClass}`}
-                          >
-                            {presentation.planLabel}
-                          </span>
+                        {t("codex.apiService.accountStats.desc", "降序")}
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          accountStatsSortDirection === "asc" ? "active" : ""
+                        }
+                        onClick={() => setAccountStatsSortDirection("asc")}
+                      >
+                        {t("codex.apiService.accountStats.asc", "升序")}
+                      </button>
+                    </div>
+                  </div>
+                  {accountStatsQuery.trim() && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setAccountStatsQuery("")}
+                    >
+                      {t("common.clear", "清空")}
+                    </button>
+                  )}
+                </div>
+                <div className="codex-api-service-account-grid codex-api-service-stats-account-grid">
+                  {memberAccounts.length === 0 ? (
+                    <div className="codex-api-service-empty">
+                      {t("codex.localAccess.emptyMembers", "当前集合暂无账号")}
+                    </div>
+                  ) : filteredSortedAccountStats.length === 0 ? (
+                    <div className="codex-api-service-empty">
+                      {t(
+                        "codex.apiService.accountStats.emptyFiltered",
+                        "没有匹配的账号统计",
+                      )}
+                    </div>
+                  ) : (
+                    filteredSortedAccountStats.map((account) => {
+                      const presentation = buildCodexAccountPresentation(
+                        account,
+                        t,
+                      );
+                      const health = healthByAccountId.get(account.id);
+                      const stat = statsByAccountId.get(account.id);
+                      const quotaEstimate = estimateAccountRemainingTokens(
+                        stat?.usage,
+                      );
+                      return (
+                        <div
+                          key={account.id}
+                          className="codex-api-service-account-card codex-api-service-account-stats-card"
+                        >
+                          <div>
+                            <strong title={presentation.displayName}>
+                              {maskAccountText(presentation.displayName)}
+                            </strong>
+                            <span
+                              className={`tier-badge ${presentation.planClass}`}
+                            >
+                              {presentation.planLabel}
+                            </span>
+                          </div>
+                          <div className="codex-api-service-account-meta">
+                            <span>
+                              {t("codex.localAccess.stats.accountRequests", {
+                                count: stat?.usage.requestCount ?? 0,
+                                defaultValue: "{{count}} 次",
+                              })}
+                            </span>
+                            <span className="codex-api-service-account-meta-token">
+                              {formatTokenCount(stat?.usage.totalTokens ?? 0)} Tokens
+                            </span>
+                            <span>
+                              {t("codex.apiService.accountStats.inputTokens", {
+                                count: formatTokenCount(
+                                  stat?.usage.inputTokens ?? 0,
+                                ),
+                                defaultValue: "输入 {{count}}",
+                              })}
+                            </span>
+                            <span>
+                              {t("codex.apiService.accountStats.outputTokens", {
+                                count: formatTokenCount(
+                                  stat?.usage.outputTokens ?? 0,
+                                ),
+                                defaultValue: "输出 {{count}}",
+                              })}
+                            </span>
+                            <span>{formatRequestResultDetail(stat?.usage)}</span>
+                            <span>
+                              {formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}
+                            </span>
+                            <span>
+                              {t("codex.apiService.accountHealth.failures", {
+                                count: health?.consecutiveFailures ?? 0,
+                                defaultValue: "连续失败 {{count}}",
+                              })}
+                            </span>
+                            <span>
+                              {health?.cooldowns.length
+                                ? t("codex.localAccess.healthCooldown", {
+                                    count: health.cooldowns.length,
+                                    defaultValue: "冷却 {{count}}",
+                                  })
+                                : t("codex.localAccess.healthAvailable", "可用")}
+                            </span>
+                            <span>
+                              {t("codex.apiService.accountHealth.image", {
+                                status:
+                                  health?.imageGenerationStatus ?? "unknown",
+                                defaultValue: "图片 {{status}}",
+                              })}
+                            </span>
+                          </div>
+                          <div className="codex-api-service-account-quota-estimate">
+                            <div className="codex-api-service-account-quota-head">
+                              <span>
+                                {t(
+                                  "codex.apiService.accountStats.remainingTitle",
+                                  "预估剩余额度",
+                                )}
+                              </span>
+                              <strong>
+                                {formatTokenCount(quotaEstimate.remaining)} Tokens
+                              </strong>
+                            </div>
+                            <div
+                              className="codex-api-service-account-quota-bar"
+                              title={t(
+                                "codex.apiService.accountStats.remainingTitle",
+                                "预估剩余额度",
+                              )}
+                            >
+                              <span
+                                style={{ width: `${quotaEstimate.percent}%` }}
+                              />
+                            </div>
+                            <div className="codex-api-service-account-quota-detail">
+                              <span>
+                                {t(
+                                  "codex.apiService.accountStats.remainingProgress",
+                                  {
+                                    percent: quotaEstimate.percent,
+                                    defaultValue: "进度 {{percent}}%",
+                                  },
+                                )}
+                              </span>
+                              <span>
+                                {t(
+                                  "codex.apiService.accountStats.remainingUsage",
+                                  {
+                                    used: formatTokenCount(quotaEstimate.used),
+                                    total: formatTokenCount(
+                                      ACCOUNT_ESTIMATED_REMAINING_TOKENS,
+                                    ),
+                                    defaultValue:
+                                      "已消耗 {{used}} / 初始可用 {{total}}",
+                                  },
+                                )}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="codex-api-service-account-meta">
-                          <span>
-                            {t("codex.localAccess.stats.accountRequests", {
-                              count: stat?.usage.requestCount ?? 0,
-                              defaultValue: "{{count}} 次",
-                            })}
-                          </span>
-                          <span className="codex-api-service-account-meta-token">
-                            {formatAccountTokenUsage(stat?.usage)}
-                          </span>
-                          <span>{formatRequestResultDetail(stat?.usage)}</span>
-                          <span>
-                            {formatUsdCost(stat?.usage.estimatedCostUsd ?? 0)}
-                          </span>
-                          <span>
-                            {t("codex.apiService.accountHealth.failures", {
-                              count: health?.consecutiveFailures ?? 0,
-                              defaultValue: "连续失败 {{count}}",
-                            })}
-                          </span>
-                          <span>
-                            {health?.cooldowns.length
-                              ? t("codex.localAccess.healthCooldown", {
-                                  count: health.cooldowns.length,
-                                  defaultValue: "冷却 {{count}}",
-                                })
-                              : t("codex.localAccess.healthAvailable", "可用")}
-                          </span>
-                          <span>
-                            {t("codex.apiService.accountHealth.image", {
-                              status:
-                                health?.imageGenerationStatus ?? "unknown",
-                              defaultValue: "图片 {{status}}",
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                      );
+                    })
+                  )}
+                </div>
+              </>
             )}
 
             {statsLogTab === "models" && (

@@ -166,6 +166,7 @@ export interface ProviderPageConfig<TAccount extends ProviderAccountBase> {
   /** OAuth 成功后的提示文案（可选） */
   resolveOauthSuccessMessage?: () => string;
   defaultSortBy?: string;
+  defaultSortDirection?: SortDirection;
 }
 
 export interface ProviderAccountBase {
@@ -768,8 +769,10 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
     oauthTabKeys: oauthTabKeysConfig,
     dataService,
     defaultSortBy: defaultSortByConfig,
+    defaultSortDirection: defaultSortDirectionConfig,
   } = config;
   const defaultSortBy = defaultSortByConfig?.trim() || DEFAULT_SORT_BY;
+  const defaultSortDirection = defaultSortDirectionConfig ?? DEFAULT_SORT_DIRECTION;
 
   const oauthTabKeys = useMemo(() => {
     const normalized = (oauthTabKeysConfig || [])
@@ -890,14 +893,14 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
   });
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
     if (!readAccountsOverviewFilterPersistenceEnabled(filterPersistenceScope)) {
-      return DEFAULT_SORT_DIRECTION;
+      return defaultSortDirection;
     }
     const saved = readAccountsOverviewFilterField<string | null>(
       filterPersistenceScope,
       FILTER_FIELD_SORT_DIRECTION,
       null,
     );
-    return normalizeSortDirection(saved);
+    return saved === 'asc' || saved === 'desc' ? saved : defaultSortDirection;
   });
 
   useEffect(() => {
