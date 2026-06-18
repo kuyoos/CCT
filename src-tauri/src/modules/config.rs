@@ -526,11 +526,11 @@ fn default_ui_scale() -> f64 {
     1.0
 }
 fn default_auto_refresh() -> i32 {
-    10
-} // 默认 10 分钟
+    -1
+} // 默认禁用
 fn default_codex_auto_refresh() -> i32 {
-    10
-} // 默认 10 分钟
+    -1
+} // 默认禁用
 fn default_codex_sync_wsl() -> bool {
     false
 }

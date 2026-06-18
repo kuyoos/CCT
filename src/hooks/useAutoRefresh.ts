@@ -47,7 +47,6 @@ function getCurrentCodexEmail(): string | null {
 }
 
 export function useAutoRefresh() {
-  const refreshAllCodexQuotas = useCodexAccountStore((state) => state.refreshAllQuotas);
   const fetchCodexAccounts = useCodexAccountStore((state) => state.fetchAccounts);
   const fetchCurrentCodexAccount = useCodexAccountStore((state) => state.fetchCurrentAccount);
 
@@ -67,7 +66,7 @@ export function useAutoRefresh() {
     [],
   );
 
-  const buildRefreshDescriptors = useCallback((config: GeneralConfig): PlatformRefreshDescriptor[] => {
+  const buildRefreshDescriptors = useCallback((_config: GeneralConfig): PlatformRefreshDescriptor[] => {
     const currentDefaults = loadCurrentAccountRefreshMinutesMap();
     const codexEmail = getCurrentCodexEmail();
     const codexCurrentMinutes = codexEmail
@@ -78,13 +77,11 @@ export function useAutoRefresh() {
       {
         key: 'codex',
         label: 'Codex',
-        intervalMinutes: config.codex_auto_refresh_minutes,
+        intervalMinutes: -1,
         currentMinutes: codexCurrentMinutes,
         fullRefreshingRef: codexRefreshingRef,
         currentRefreshingRef: codexCurrentRefreshingRef,
-        runFullRefresh: async () => {
-          await refreshAllCodexQuotas();
-        },
+        runFullRefresh: async () => {},
         runCurrentRefresh: async () => {
           await runProviderCurrentRefresh(fetchCurrentCodexAccount, async () => {
             const current = useCodexAccountStore.getState().currentAccount;
@@ -95,7 +92,7 @@ export function useAutoRefresh() {
         },
       },
     ];
-  }, [fetchCurrentCodexAccount, refreshAllCodexQuotas, runProviderCurrentRefresh]);
+  }, [fetchCurrentCodexAccount, runProviderCurrentRefresh]);
 
   const buildTasks = useCallback((descriptors: PlatformRefreshDescriptor[]): AutoRefreshSchedulerTask[] => {
     const tasks: AutoRefreshSchedulerTask[] = [];

@@ -6876,29 +6876,25 @@ async fn start_legacy_gateway_locked(
     Ok(())
 }
 
-fn sidecar_cached_account_usable_after_prepare_error(account: &CodexAccount) -> bool {
+fn sidecar_cached_account_usable(account: &CodexAccount) -> bool {
     if account.is_api_key_auth() {
         return true;
     }
     if account.requires_reauth {
         return false;
     }
-    account_has_refresh_token(account)
-        || !codex_oauth::is_token_expired(&account.tokens.access_token)
+    !account.tokens.access_token.trim().is_empty() || account_has_refresh_token(account)
 }
 
 async fn load_sidecar_account(account_id: &str) -> Option<CodexAccount> {
-    match get_prepared_account(account_id).await {
-        Ok(account) => Some(account),
-        Err(error) => {
-            logger::log_codex_api_warn(&format!(
-                "[CodexLocalAccess] sidecar 准备账号失败，尝试使用本地缓存: account_id={}, error={}",
-                account_id, error
-            ));
-            codex_account::load_account(account_id)
-                .filter(sidecar_cached_account_usable_after_prepare_error)
-        }
+    let account = codex_account::load_account(account_id);
+    if account.is_none() {
+        logger::log_codex_api_warn(&format!(
+            "[CodexLocalAccess] sidecar 跳过不存在账号: account_id={}",
+            account_id
+        ));
     }
+    account.filter(sidecar_cached_account_usable)
 }
 
 async fn prepare_sidecar_launch_config(
@@ -10387,7 +10383,7 @@ async fn snapshot_state_without_gateway_reload() -> Result<CodexLocalAccessState
 }
 
 pub async fn get_local_access_state() -> Result<CodexLocalAccessState, String> {
-    snapshot_state().await
+    snapshot_state_without_gateway_reload().await
 }
 
 pub async fn activate_local_access_for_dir(
@@ -12255,31 +12251,27 @@ pub async fn save_local_access_accounts(
             })
     };
 
-    let accounts = codex_account::list_accounts_checked()?;
-    let valid_account_ids: HashSet<String> = accounts
-        .iter()
-        .filter(|account| is_local_access_eligible_account(account, restrict_free_accounts))
-        .map(|account| account.id.clone())
-        .collect();
-
     let mut next_account_ids = Vec::new();
     let mut seen = HashSet::new();
     for account_id in account_ids {
-        if !valid_account_ids.contains(&account_id) {
+        let account_id = account_id.trim().to_string();
+        if account_id.is_empty() || !seen.insert(account_id.clone()) {
             continue;
         }
-        if seen.insert(account_id.clone()) {
-            next_account_ids.push(account_id);
-        }
+        next_account_ids.push(account_id);
     }
 
     collection.restrict_free_accounts = restrict_free_accounts;
     collection.account_ids = next_account_ids;
+    collection.custom_routing_rules = normalize_custom_routing_rules(
+        std::mem::take(&mut collection.custom_routing_rules),
+        &collection.account_ids,
+    );
+    collection.account_model_rules = normalize_account_model_rules(
+        std::mem::take(&mut collection.account_model_rules),
+        &collection.account_ids,
+    );
     collection.updated_at = now_ms();
-    let (changed, _) = sanitize_collection_with_accounts(&mut collection, &accounts)?;
-    if changed {
-        collection.updated_at = now_ms();
-    }
     save_collection_to_disk(&collection)?;
 
     let should_reload_gateway = collection.enabled;

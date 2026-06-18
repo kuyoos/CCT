@@ -76,7 +76,6 @@ import {
   formatCodexQuotaPoolPercent,
   summarizeCodexQuotaPool,
 } from "../utils/codexQuotaPool";
-import { filterCodexLocalAccessAccountIds } from "../utils/codexLocalAccessAccounts";
 import { SingleSelectDropdown } from "../components/SingleSelectDropdown";
 import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
 import { PaginationControls } from "../components/PaginationControls";
@@ -1412,35 +1411,22 @@ export function CodexApiServicePage() {
     accountIds: string[],
     restrictFreeAccounts: boolean,
   ) => {
-    const filteredAccountIds =
-      accountIds.length === 0
-        ? []
-        : filterCodexLocalAccessAccountIds(
-            accountIds,
-            accounts,
-            restrictFreeAccounts,
-          );
-
-    if (accountIds.length > 0 && filteredAccountIds.length === 0) {
-      throw new Error(
-        t(
-          "codex.localAccess.noEligibleAccountsSelected",
-          "所选账号不在当前环境中，或不符合 API 服务条件。请先在当前环境导入可用 Codex 账号后再添加。",
-        ),
-      );
-    }
+    const seen = new Set<string>();
+    const nextAccountIds = accountIds
+      .map((accountId) => accountId.trim())
+      .filter((accountId) => {
+        if (!accountId || seen.has(accountId)) {
+          return false;
+        }
+        seen.add(accountId);
+        return true;
+      });
 
     const next = await codexLocalAccessService.saveCodexLocalAccessAccounts(
-      filteredAccountIds,
+      nextAccountIds,
       restrictFreeAccounts,
     );
     setState(next);
-    void fetchAccounts().catch((error) => {
-      console.error(
-        "Failed to refresh Codex accounts after API service save:",
-        error,
-      );
-    });
   };
 
   const handleSaveMembers = async (

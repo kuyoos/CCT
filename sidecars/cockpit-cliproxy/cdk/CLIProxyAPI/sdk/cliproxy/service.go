@@ -929,11 +929,10 @@ func (s *Service) Run(ctx context.Context) error {
 		log.Info("file watcher started for config and auth directory changes")
 	}
 
-	// Prefer core auth manager auto refresh if available.
+	// Cockpit API Service keeps auth refresh on-demand to avoid refreshing hundreds of accounts at startup.
 	if s.coreManager != nil && !homeEnabled {
-		interval := 15 * time.Minute
-		s.coreManager.StartAutoRefresh(context.Background(), interval)
-		log.Infof("core auth auto-refresh started (interval=%s)", interval)
+		s.coreManager.StopAutoRefresh()
+		log.Infof("core auth auto-refresh disabled; credentials refresh on request only")
 	}
 
 	select {
@@ -1856,10 +1855,12 @@ func (s *Service) StartRuntime(ctx context.Context) error {
 		s.hooks.OnAfterStart(s)
 	}
 
+	// API Service manages hundreds of Codex auths. Starting the core auto-refresh
+	// loop here causes all registered auths to be evaluated and refreshed in bulk,
+	// which blocks startup and triggers quota-refresh storms. Request-time refresh
+	// is handled by provider executors for the single selected auth instead.
 	if s.coreManager != nil {
-		interval := 15 * time.Minute
-		s.coreManager.StartAutoRefresh(context.Background(), interval)
-		log.Infof("core auth auto-refresh started (interval=%s)", interval)
+		log.Infof("core auth auto-refresh disabled; request-time refresh remains enabled")
 	}
 
 	<-ctx.Done()

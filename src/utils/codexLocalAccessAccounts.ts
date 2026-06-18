@@ -98,18 +98,32 @@ export function filterCodexLocalAccessAccountIds(
   accounts: CodexAccount[],
   restrictFreeAccounts: boolean,
 ): string[] {
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
   const seen = new Set<string>();
   const next: string[] = [];
 
+  if (!restrictFreeAccounts) {
+    for (const accountId of accountIds) {
+      const normalized = accountId.trim();
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      next.push(normalized);
+    }
+    return next;
+  }
+
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+
   for (const accountId of accountIds) {
-    const account = accountById.get(accountId);
+    const normalized = accountId.trim();
+    const account = accountById.get(normalized);
     if (!account || !isCodexLocalAccessEligibleAccount(account, restrictFreeAccounts)) {
       continue;
     }
-    if (!seen.has(accountId)) {
-      seen.add(accountId);
-      next.push(accountId);
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      next.push(normalized);
     }
   }
 

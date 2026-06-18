@@ -1545,6 +1545,47 @@ func codexIdentityConfuseUUID(authID string, kind string, value string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(name)).String()
 }
 
+const codexRequestRefreshLeeway = 2 * time.Minute
+
+func codexMetadataString(metadata map[string]any, key string) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case []byte:
+		return strings.TrimSpace(string(typed))
+	default:
+		return ""
+	}
+}
+
+func (e *CodexExecutor) ShouldPrepareRequestAuth(auth *cliproxyauth.Auth) bool {
+	if auth == nil || auth.Metadata == nil {
+		return false
+	}
+	if codexMetadataString(auth.Metadata, "refresh_token") == "" {
+		return false
+	}
+	if codexMetadataString(auth.Metadata, "access_token") == "" {
+		return true
+	}
+	expiry, ok := auth.ExpirationTime()
+	if !ok || expiry.IsZero() {
+		return false
+	}
+	return time.Until(expiry) <= codexRequestRefreshLeeway
+}
+
+func (e *CodexExecutor) PrepareRequestAuth(ctx context.Context, auth *cliproxyauth.Auth) (*cliproxyauth.Auth, error) {
+	return e.Refresh(ctx, auth)
+}
+
 func applyCodexHeaders(r *http.Request, auth *cliproxyauth.Auth, token string, stream bool, cfg *config.Config) {
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer "+token)
