@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTranslation } from 'react-i18next';
 import './App.css';
+import { CloseConfirmDialog } from './components/CloseConfirmDialog';
 import { SideNav } from './components/layout/SideNav';
 import { changeLanguage } from './i18n';
 import type { Page } from './types/navigation';
@@ -24,6 +25,7 @@ const FloatingCardWindow = lazy(() =>
 function MainApp() {
   const { t } = useTranslation();
   const [page, setPage] = useState<Page>('codex');
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,19 +74,38 @@ function MainApp() {
     };
   }, []);
 
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+
+    listen('window:close_requested', () => {
+      setShowCloseConfirm(true);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   const fallback = <div className="loading-state">{t('common.loading', '加载中...')}</div>;
 
   return (
-    <div className="app-container app-container-side-nav-classic">
-      <SideNav page={page} setPage={setPage} />
-      <div className="main-wrapper">
-        <Suspense fallback={fallback}>
-          {page === 'codex' && <CodexAccountsPage />}
-          {page === 'codex-api-service' && <CodexApiServicePage />}
-          {page === 'settings' && <SettingsPage />}
-        </Suspense>
+    <>
+      <div className="app-container app-container-side-nav-classic">
+        <SideNav page={page} setPage={setPage} />
+        <div className="main-wrapper">
+          <Suspense fallback={fallback}>
+            {page === 'codex' && <CodexAccountsPage />}
+            {page === 'codex-api-service' && <CodexApiServicePage />}
+            {page === 'settings' && <SettingsPage />}
+          </Suspense>
+        </div>
       </div>
-    </div>
+      {showCloseConfirm && (
+        <CloseConfirmDialog onClose={() => setShowCloseConfirm(false)} />
+      )}
+    </>
   );
 }
 

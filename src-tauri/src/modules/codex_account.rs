@@ -13,6 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use toml_edit::{value, Document};
 
 static CODEX_QUOTA_ALERT_LAST_SENT: std::sync::LazyLock<Mutex<HashMap<String, i64>>> =
@@ -5072,6 +5073,9 @@ fn next_codex_batch_import_session_id() -> String {
     )
 }
 
+const CODEX_BATCH_IMPORT_PREVIEW_EMIT_INTERVAL: Duration = Duration::from_millis(250);
+const CODEX_BATCH_IMPORT_PREVIEW_EMIT_STEP: usize = 25;
+
 fn emit_codex_batch_import_progress(app: &tauri::AppHandle, payload: CodexBatchImportProgress) {
     use tauri::Emitter;
     let _ = app.emit("codex:batch-import-progress", payload);
@@ -5696,6 +5700,7 @@ async fn run_codex_batch_import_resume(app: tauri::AppHandle, session_id: String
         ),
     );
 
+    let mut last_preview_emit_at = Instant::now();
     for (index, source_item) in source_items.into_iter().enumerate().skip(start_index) {
         if cancel.load(Ordering::SeqCst) {
             break;
@@ -5710,6 +5715,10 @@ async fn run_codex_batch_import_resume(app: tauri::AppHandle, session_id: String
         .await;
         let current_label = Some(cached.preview.label.clone());
         items.push(cached);
+        let should_emit_preview =
+            items.len() == total
+                || items.len() % CODEX_BATCH_IMPORT_PREVIEW_EMIT_STEP == 0
+                || last_preview_emit_at.elapsed() >= CODEX_BATCH_IMPORT_PREVIEW_EMIT_INTERVAL;
         {
             let mut sessions = CODEX_BATCH_IMPORT_SESSIONS.lock().unwrap();
             if let Some(session) = sessions.get_mut(&session_id) {
@@ -5729,14 +5738,17 @@ async fn run_codex_batch_import_resume(app: tauri::AppHandle, session_id: String
                 current_label,
             ),
         );
-        let preview = {
-            let sessions = CODEX_BATCH_IMPORT_SESSIONS.lock().unwrap();
-            sessions
-                .get(&session_id)
-                .map(|session| codex_batch_import_preview_from_session(&session_id, session))
-        };
-        if let Some(preview) = preview {
-            emit_codex_batch_import_preview(&app, preview);
+        if should_emit_preview {
+            let preview = {
+                let sessions = CODEX_BATCH_IMPORT_SESSIONS.lock().unwrap();
+                sessions
+                    .get(&session_id)
+                    .map(|session| codex_batch_import_preview_from_session(&session_id, session))
+            };
+            if let Some(preview) = preview {
+                emit_codex_batch_import_preview(&app, preview);
+                last_preview_emit_at = Instant::now();
+            }
         }
     }
 

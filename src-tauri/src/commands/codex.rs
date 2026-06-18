@@ -511,11 +511,28 @@ async fn run_codex_post_refresh_checks(app: &AppHandle) {
     CODEX_POST_REFRESH_CHECK_IN_PROGRESS.store(false, Ordering::SeqCst);
 }
 
+fn cleanup_deleted_codex_local_access_accounts_in_background(account_ids: Vec<String>) {
+    if account_ids.is_empty() {
+        return;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) =
+            codex_local_access::remove_deleted_accounts_from_local_access_pool(&account_ids).await
+        {
+            logger::log_warn(&format!(
+                "删除 Codex 账号后清理 API 服务账号池失败: {}",
+                error
+            ));
+        }
+    });
+}
+
 /// 删除 Codex 账号
 #[tauri::command]
 pub async fn delete_codex_account(account_id: String) -> Result<(), String> {
     codex_account::remove_account(&account_id)?;
-    codex_local_access::remove_deleted_accounts_from_local_access_pool(&[account_id]).await?;
+    cleanup_deleted_codex_local_access_accounts_in_background(vec![account_id]);
     Ok(())
 }
 
@@ -523,55 +540,28 @@ pub async fn delete_codex_account(account_id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn delete_codex_accounts(account_ids: Vec<String>) -> Result<(), String> {
     codex_account::remove_accounts(&account_ids)?;
-    codex_local_access::remove_deleted_accounts_from_local_access_pool(&account_ids).await?;
+    cleanup_deleted_codex_local_access_accounts_in_background(account_ids);
     Ok(())
 }
 
-async fn refresh_imported_codex_accounts(
-    app: &AppHandle,
-    accounts: Vec<CodexAccount>,
-) -> Vec<CodexAccount> {
-    let mut result = Vec::with_capacity(accounts.len());
-    let mut success_count = 0;
-    let mut attempted = false;
-
-    for account in accounts {
-        if account.is_api_key_auth() {
-            result.push(account);
-            continue;
-        }
-
-        attempted = true;
-        match codex_quota::refresh_account_quota(&account.id).await {
-            Ok(_) => {
-                success_count += 1;
+fn finalize_imported_codex_accounts(app: &AppHandle, accounts: Vec<CodexAccount>) -> Vec<CodexAccount> {
+    if !accounts.is_empty() {
+        let tray_app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(error) = crate::modules::tray::update_tray_menu(&tray_app) {
+                logger::log_warn(&format!("Codex 导入后后台更新托盘失败: {}", error));
             }
-            Err(error) => {
-                logger::log_warn(&format!(
-                    "Codex 导入后刷新配额失败: account_id={}, email={}, error={}",
-                    account.id, account.email, error
-                ));
-            }
-        }
-
-        result.push(codex_account::load_account(&account.id).unwrap_or(account));
+        });
     }
 
-    if success_count > 0 {
-        run_codex_post_refresh_checks(app).await;
-    }
-    if attempted || !result.is_empty() {
-        let _ = crate::modules::tray::update_tray_menu(app);
-    }
-
-    result
+    accounts
 }
 
 /// 从本地 auth.json 导入账号
 #[tauri::command]
 pub async fn import_codex_from_local(app: AppHandle) -> Result<CodexAccount, String> {
     let account = codex_account::import_from_local()?;
-    let mut accounts = refresh_imported_codex_accounts(&app, vec![account]).await;
+    let mut accounts = finalize_imported_codex_accounts(&app, vec![account]);
     accounts
         .pop()
         .ok_or_else(|| "账号导入后无法读取".to_string())
@@ -584,7 +574,7 @@ pub async fn import_codex_from_json(
     json_content: String,
 ) -> Result<Vec<CodexAccount>, String> {
     let accounts = codex_account::import_from_json(&json_content).await?;
-    Ok(refresh_imported_codex_accounts(&app, accounts).await)
+    Ok(finalize_imported_codex_accounts(&app, accounts))
 }
 
 /// 导出 Codex 账号
@@ -600,7 +590,7 @@ pub async fn import_codex_from_files(
     file_paths: Vec<String>,
 ) -> Result<codex_account::CodexFileImportResult, String> {
     let result = codex_account::import_from_files(file_paths).await?;
-    let imported = refresh_imported_codex_accounts(&app, result.imported).await;
+    let imported = finalize_imported_codex_accounts(&app, result.imported);
     Ok(codex_account::CodexFileImportResult {
         imported,
         failed: result.failed,
@@ -700,10 +690,6 @@ pub async fn refresh_all_codex_quotas(app: AppHandle) -> Result<i32, String> {
 async fn save_codex_oauth_tokens(tokens: CodexTokens) -> Result<CodexAccount, String> {
     let account = codex_account::upsert_account(tokens)?;
 
-    if let Err(e) = codex_quota::refresh_account_quota(&account.id).await {
-        logger::log_error(&format!("刷新配额失败: {}", e));
-    }
-
     let loaded =
         codex_account::load_account(&account.id).ok_or_else(|| "账号保存后无法读取".to_string())?;
     logger::log_info(&format!(
@@ -801,11 +787,6 @@ pub async fn add_codex_account_with_token(
     };
 
     let account = codex_account::upsert_account(tokens)?;
-
-    // 刷新配额
-    if let Err(e) = codex_quota::refresh_account_quota(&account.id).await {
-        logger::log_error(&format!("刷新配额失败: {}", e));
-    }
 
     codex_account::load_account(&account.id).ok_or_else(|| "账号保存后无法读取".to_string())
 }

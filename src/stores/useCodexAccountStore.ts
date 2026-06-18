@@ -21,15 +21,77 @@ const CODEX_CURRENT_ACCOUNT_CACHE_KEY = `agtools.codex.accounts.current${STORAGE
 const CODEX_PROFILE_SYNC_IN_FLIGHT = new Set<string>();
 const CODEX_PROFILE_SYNC_LAST_ATTEMPT = new Map<string, number>();
 const CODEX_PROFILE_SYNC_RETRY_INTERVAL_MS = 5 * 60 * 1000;
+const CODEX_PROFILE_SYNC_AUTO_HYDRATE_MAX_ACCOUNTS = 40;
+const CODEX_PROFILE_SYNC_MAX_PER_RUN = 24;
+const CODEX_PROFILE_SYNC_CONCURRENCY = 2;
+const CODEX_PROFILE_SYNC_BATCH_SIZE = 6;
+const CODEX_PROFILE_SYNC_YIELD_MS = 80;
+const CODEX_CACHE_WRITE_DELAY_MS = 180;
 let allowNextEmptyCodexAccountList = false;
 let allowNextEmptyCodexCurrentAccount = false;
+let codexAccountsCacheWriteTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingCodexAccountsCache: CodexAccountCacheItem[] | null = null;
+let codexCurrentAccountCacheWriteTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingCodexCurrentAccountCache: CodexAccountCacheItem | null | undefined;
+
+type CodexAccountCacheItem = Omit<CodexAccount, 'tokens' | 'quota'> & {
+  tokens?: Partial<CodexAccount['tokens']>;
+  quota?: CodexQuota;
+};
+
+const emptyCodexTokens = (): CodexAccount['tokens'] => ({
+  id_token: '',
+  access_token: '',
+});
+
+const normalizeCachedCodexAccount = (value: unknown): CodexAccount | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const account = value as Partial<CodexAccount>;
+  if (typeof account.id !== 'string' || !account.id.trim()) return null;
+  if (typeof account.email !== 'string' || !account.email.trim()) return null;
+  return {
+    ...account,
+    id: account.id,
+    email: account.email,
+    tokens: {
+      ...emptyCodexTokens(),
+      ...(account.tokens ?? {}),
+    },
+    created_at: typeof account.created_at === 'number' ? account.created_at : 0,
+    last_used: typeof account.last_used === 'number' ? account.last_used : 0,
+  } as CodexAccount;
+};
+
+const stripCodexQuotaForCache = (quota?: CodexQuota): CodexQuota | undefined => {
+  if (!quota) return undefined;
+  return {
+    hourly_percentage: quota.hourly_percentage,
+    hourly_reset_time: quota.hourly_reset_time,
+    hourly_window_minutes: quota.hourly_window_minutes,
+    hourly_window_present: quota.hourly_window_present,
+    weekly_percentage: quota.weekly_percentage,
+    weekly_reset_time: quota.weekly_reset_time,
+    weekly_window_minutes: quota.weekly_window_minutes,
+    weekly_window_present: quota.weekly_window_present,
+  };
+};
+
+const toCodexAccountCacheItem = (account: CodexAccount): CodexAccountCacheItem => {
+  const cacheItem: CodexAccountCacheItem = { ...account };
+  delete cacheItem.tokens;
+  cacheItem.quota = stripCodexQuotaForCache(account.quota);
+  return cacheItem;
+};
 
 const loadCachedCodexAccounts = () => {
   try {
     const raw = localStorage.getItem(CODEX_ACCOUNTS_CACHE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(normalizeCachedCodexAccount)
+      .filter((account): account is CodexAccount => Boolean(account));
   } catch {
     return [];
   }
@@ -39,35 +101,70 @@ const loadCachedCodexCurrentAccount = () => {
   try {
     const raw = localStorage.getItem(CODEX_CURRENT_ACCOUNT_CACHE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as CodexAccount;
+    return normalizeCachedCodexAccount(JSON.parse(raw));
   } catch {
     return null;
   }
 };
 
 const persistCodexAccountsCache = (accounts: CodexAccount[]) => {
-  try {
-    localStorage.setItem(CODEX_ACCOUNTS_CACHE_KEY, JSON.stringify(accounts));
-  } catch {
-    // ignore cache write failures
-  }
+  pendingCodexAccountsCache = accounts.map(toCodexAccountCacheItem);
+  if (codexAccountsCacheWriteTimer) return;
+  codexAccountsCacheWriteTimer = setTimeout(() => {
+    const snapshot = pendingCodexAccountsCache;
+    pendingCodexAccountsCache = null;
+    codexAccountsCacheWriteTimer = null;
+    if (!snapshot) return;
+    try {
+      localStorage.setItem(CODEX_ACCOUNTS_CACHE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // ignore cache write failures
+    }
+  }, CODEX_CACHE_WRITE_DELAY_MS);
 };
 
 const persistCodexCurrentAccountCache = (account: CodexAccount | null) => {
-  try {
-    if (!account) {
-      localStorage.removeItem(CODEX_CURRENT_ACCOUNT_CACHE_KEY);
-      return;
+  pendingCodexCurrentAccountCache = account ? toCodexAccountCacheItem(account) : null;
+  if (codexCurrentAccountCacheWriteTimer) return;
+  codexCurrentAccountCacheWriteTimer = setTimeout(() => {
+    const snapshot = pendingCodexCurrentAccountCache;
+    pendingCodexCurrentAccountCache = undefined;
+    codexCurrentAccountCacheWriteTimer = null;
+    try {
+      if (!snapshot) {
+        localStorage.removeItem(CODEX_CURRENT_ACCOUNT_CACHE_KEY);
+        return;
+      }
+      localStorage.setItem(CODEX_CURRENT_ACCOUNT_CACHE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // ignore cache write failures
     }
-    localStorage.setItem(CODEX_CURRENT_ACCOUNT_CACHE_KEY, JSON.stringify(account));
-  } catch {
-    // ignore cache write failures
-  }
+  }, CODEX_CACHE_WRITE_DELAY_MS);
 };
 
 const shouldHydrateCodexProfile = (account: CodexAccount): boolean =>
   !hasCodexAccountStructure(account) ||
   (isCodexTeamLikePlan(account.plan_type) && !hasCodexAccountName(account));
+
+const waitForCodexProfileSyncYield = () =>
+  new Promise<void>((resolve) => {
+    const idleScheduler =
+      typeof window !== 'undefined' && 'requestIdleCallback' in window
+        ? (window as Window & {
+            requestIdleCallback?: (
+              callback: () => void,
+              options?: { timeout: number },
+            ) => number;
+          }).requestIdleCallback
+        : undefined;
+
+    if (idleScheduler) {
+      idleScheduler(resolve, { timeout: CODEX_PROFILE_SYNC_YIELD_MS });
+      return;
+    }
+
+    setTimeout(resolve, CODEX_PROFILE_SYNC_YIELD_MS);
+  });
 
 const CODEX_STALE_ACCOUNT_ERROR = 'CODEX_STALE_ACCOUNT';
 
@@ -148,7 +245,9 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
       allowNextEmptyCodexAccountList = false;
       set({ accounts, loading: false });
       persistCodexAccountsCache(accounts);
-      void get().hydrateAccountProfilesIfNeeded(accounts.map((account) => account.id));
+      if (accounts.length <= CODEX_PROFILE_SYNC_AUTO_HYDRATE_MAX_ACCOUNTS) {
+        void get().hydrateAccountProfilesIfNeeded(accounts.map((account) => account.id));
+      }
     } catch (e) {
       set({ error: String(e), loading: false });
     }
@@ -325,43 +424,85 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
   hydrateAccountProfilesIfNeeded: async (accountIds?: string[]) => {
     const now = Date.now();
     const scope = accountIds ? new Set(accountIds) : null;
-    const candidates = get().accounts.filter(
-      (account) =>
-        (!scope || scope.has(account.id)) &&
-        shouldHydrateCodexProfile(account) &&
-        !CODEX_PROFILE_SYNC_IN_FLIGHT.has(account.id) &&
-        now - (CODEX_PROFILE_SYNC_LAST_ATTEMPT.get(account.id) ?? 0) >=
-          CODEX_PROFILE_SYNC_RETRY_INTERVAL_MS,
-    );
+    const candidates = get()
+      .accounts.filter(
+        (account) =>
+          (!scope || scope.has(account.id)) &&
+          shouldHydrateCodexProfile(account) &&
+          !CODEX_PROFILE_SYNC_IN_FLIGHT.has(account.id) &&
+          now - (CODEX_PROFILE_SYNC_LAST_ATTEMPT.get(account.id) ?? 0) >=
+            CODEX_PROFILE_SYNC_RETRY_INTERVAL_MS,
+      )
+      .slice(0, CODEX_PROFILE_SYNC_MAX_PER_RUN);
 
-    for (const account of candidates) {
-      CODEX_PROFILE_SYNC_IN_FLIGHT.add(account.id);
-      CODEX_PROFILE_SYNC_LAST_ATTEMPT.set(account.id, now);
-      try {
-        const updatedAccount = await codexService.refreshCodexAccountProfile(account.id);
-        set((state) => {
-          const nextAccounts = state.accounts.map((item) =>
-            item.id === updatedAccount.id ? { ...item, ...updatedAccount } : item,
-          );
-          const nextCurrentAccount =
-            state.currentAccount?.id === updatedAccount.id
-              ? { ...state.currentAccount, ...updatedAccount }
-              : state.currentAccount;
+    if (candidates.length === 0) return;
 
-          persistCodexAccountsCache(nextAccounts);
-          persistCodexCurrentAccountCache(nextCurrentAccount);
+    const pendingUpdates: CodexAccount[] = [];
+    let workerIndex = 0;
 
-          return {
-            accounts: nextAccounts,
-            currentAccount: nextCurrentAccount,
-          };
+    const flushUpdates = () => {
+      if (pendingUpdates.length === 0) return;
+      const updates = pendingUpdates.splice(0, pendingUpdates.length);
+      const updatesById = new Map(updates.map((account) => [account.id, account]));
+
+      set((state) => {
+        let changed = false;
+        const nextAccounts = state.accounts.map((item) => {
+          const updatedAccount = updatesById.get(item.id);
+          if (!updatedAccount) return item;
+          changed = true;
+          return { ...item, ...updatedAccount };
         });
-      } catch (e) {
-        console.warn('刷新 Codex 账号资料失败:', account.id, e);
-      } finally {
-        CODEX_PROFILE_SYNC_IN_FLIGHT.delete(account.id);
+
+        const currentUpdate = state.currentAccount
+          ? updatesById.get(state.currentAccount.id)
+          : undefined;
+        const nextCurrentAccount =
+          state.currentAccount && currentUpdate
+            ? { ...state.currentAccount, ...currentUpdate }
+            : state.currentAccount;
+
+        if (!changed && nextCurrentAccount === state.currentAccount) {
+          return state;
+        }
+
+        persistCodexAccountsCache(nextAccounts);
+        persistCodexCurrentAccountCache(nextCurrentAccount);
+
+        return {
+          accounts: nextAccounts,
+          currentAccount: nextCurrentAccount,
+        };
+      });
+    };
+
+    const runWorker = async () => {
+      while (workerIndex < candidates.length) {
+        const account = candidates[workerIndex];
+        workerIndex += 1;
+        CODEX_PROFILE_SYNC_IN_FLIGHT.add(account.id);
+        CODEX_PROFILE_SYNC_LAST_ATTEMPT.set(account.id, Date.now());
+        try {
+          const updatedAccount = await codexService.refreshCodexAccountProfile(account.id);
+          pendingUpdates.push(updatedAccount);
+          if (pendingUpdates.length >= CODEX_PROFILE_SYNC_BATCH_SIZE) {
+            flushUpdates();
+            await waitForCodexProfileSyncYield();
+          }
+        } catch (e) {
+          console.warn('刷新 Codex 账号资料失败:', account.id, e);
+        } finally {
+          CODEX_PROFILE_SYNC_IN_FLIGHT.delete(account.id);
+        }
       }
-    }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(CODEX_PROFILE_SYNC_CONCURRENCY, candidates.length) },
+      () => runWorker(),
+    );
+    await Promise.all(workers);
+    flushUpdates();
   },
   
   importFromLocal: async () => {

@@ -3928,8 +3928,6 @@ export function CodexAccountsPage() {
     try {
       const account = await codexService.importCodexFromLocal();
       await fetchAccounts();
-      await new Promise((resolve) => setTimeout(resolve, 180));
-      await fetchAccounts();
       await emitAccountsChanged({
         platformId: "codex",
         reason: "import",
@@ -7582,7 +7580,7 @@ export function CodexAccountsPage() {
       )
       .map((account) => account.id);
     if (teamAccountIds.length === 0) return;
-    void hydrateAccountProfilesIfNeeded(teamAccountIds);
+    void hydrateAccountProfilesIfNeeded(teamAccountIds.slice(0, 12));
   }, [hydrateAccountProfilesIfNeeded, paginatedAccounts]);
 
   const resolveGroupLabel = (groupKey: string) =>
