@@ -179,8 +179,10 @@ const DEFAULT_SORT_BY = 'created_at';
 const DEFAULT_SORT_DIRECTION: SortDirection = 'desc';
 const DEFAULT_VIEW_MODE: ViewMode = 'grid';
 
-const normalizeSortDirection = (value: string | null): SortDirection =>
-  value === 'asc' ? 'asc' : DEFAULT_SORT_DIRECTION;
+const normalizeSortDirection = (
+  value: string | null,
+  fallback: SortDirection = DEFAULT_SORT_DIRECTION,
+): SortDirection => (value === 'asc' || value === 'desc' ? value : fallback);
 
 const normalizeViewMode = (value: string | null): ViewMode =>
   value === 'list' ? 'list' : DEFAULT_VIEW_MODE;
@@ -900,7 +902,7 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
       FILTER_FIELD_SORT_DIRECTION,
       null,
     );
-    return saved === 'asc' || saved === 'desc' ? saved : defaultSortDirection;
+    return normalizeSortDirection(saved, defaultSortDirection);
   });
 
   useEffect(() => {

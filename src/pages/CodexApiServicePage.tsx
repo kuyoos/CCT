@@ -814,6 +814,30 @@ export function CodexApiServicePage() {
     statsByAccountId,
     t,
   ]);
+  const accountQuotaEstimateSummary = useMemo(() => {
+    const accountCount = memberAccounts.length;
+    const estimatedTotal = accountCount * ACCOUNT_ESTIMATED_REMAINING_TOKENS;
+    const used = memberAccounts.reduce((sum, account) => {
+      const usage = statsByAccountId.get(account.id)?.usage;
+      return sum + Math.max(0, Math.round(usage?.totalTokens ?? 0));
+    }, 0);
+    const remaining = Math.max(0, estimatedTotal - used);
+    const percent =
+      accountCount > 0
+        ? Math.max(
+            0,
+            Math.min(
+              ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT,
+              Math.round(
+                (remaining /
+                  (accountCount * ACCOUNT_ESTIMATED_TOTAL_TOKENS)) *
+                  100,
+              ),
+            ),
+          )
+        : 0;
+    return { accountCount, estimatedTotal, remaining, used, percent };
+  }, [memberAccounts, statsByAccountId]);
   const quotaPoolSummary = useMemo(
     () => summarizeCodexQuotaPool(memberAccounts),
     [memberAccounts],
@@ -2566,6 +2590,19 @@ export function CodexApiServicePage() {
       }),
     },
     {
+      key: "remainingQuota",
+      label: t(
+        "codex.apiService.accountStats.remainingAllTitle",
+        "全部账号预估剩余",
+      ),
+      value: `${formatTokenCount(accountQuotaEstimateSummary.remaining)} Tokens`,
+      detail:
+        accountQuotaEstimateSummary.accountCount > 0
+          ? `${accountQuotaEstimateSummary.accountCount} 账号 · 进度 ${accountQuotaEstimateSummary.percent}% · 已消耗 ${formatTokenCount(accountQuotaEstimateSummary.used)} / 初始可用 ${formatTokenCount(accountQuotaEstimateSummary.estimatedTotal)}`
+          : t("codex.localAccess.emptyMembers", "当前集合暂无账号"),
+      progress: accountQuotaEstimateSummary.percent,
+    },
+    {
       key: "cost",
       label: t("codex.localAccess.stats.estimatedCost", "估算价值"),
       value: formatUsdCost(totals?.estimatedCostUsd ?? 0),
@@ -2776,6 +2813,11 @@ export function CodexApiServicePage() {
               <span>{item.label}</span>
               <strong>{item.value}</strong>
               <small>{item.detail}</small>
+              {typeof item.progress === "number" && (
+                <div className="codex-api-service-summary-progress">
+                  <span style={{ width: `${item.progress}%` }} />
+                </div>
+              )}
             </div>
           ))}
         </section>
@@ -3854,20 +3896,18 @@ export function CodexApiServicePage() {
                               {formatTokenCount(stat?.usage.totalTokens ?? 0)} Tokens
                             </span>
                             <span>
-                              {t("codex.apiService.accountStats.inputTokens", {
-                                count: formatTokenCount(
-                                  stat?.usage.inputTokens ?? 0,
-                                ),
-                                defaultValue: "输入 {{count}}",
-                              })}
+                              {t(
+                                "codex.apiService.accountStats.sortInputTokens",
+                                "输入 Token",
+                              )}{" "}
+                              {formatTokenCount(stat?.usage.inputTokens ?? 0)}
                             </span>
                             <span>
-                              {t("codex.apiService.accountStats.outputTokens", {
-                                count: formatTokenCount(
-                                  stat?.usage.outputTokens ?? 0,
-                                ),
-                                defaultValue: "输出 {{count}}",
-                              })}
+                              {t(
+                                "codex.apiService.accountStats.sortOutputTokens",
+                                "输出 Token",
+                              )}{" "}
+                              {formatTokenCount(stat?.usage.outputTokens ?? 0)}
                             </span>
                             <span>{formatRequestResultDetail(stat?.usage)}</span>
                             <span>
@@ -3919,27 +3959,13 @@ export function CodexApiServicePage() {
                               />
                             </div>
                             <div className="codex-api-service-account-quota-detail">
+                              <span>{`进度 ${quotaEstimate.percent}%`}</span>
                               <span>
-                                {t(
-                                  "codex.apiService.accountStats.remainingProgress",
-                                  {
-                                    percent: quotaEstimate.percent,
-                                    defaultValue: "进度 {{percent}}%",
-                                  },
-                                )}
-                              </span>
-                              <span>
-                                {t(
-                                  "codex.apiService.accountStats.remainingUsage",
-                                  {
-                                    used: formatTokenCount(quotaEstimate.used),
-                                    total: formatTokenCount(
-                                      ACCOUNT_ESTIMATED_REMAINING_TOKENS,
-                                    ),
-                                    defaultValue:
-                                      "已消耗 {{used}} / 初始可用 {{total}}",
-                                  },
-                                )}
+                                {`已消耗 ${formatTokenCount(
+                                  quotaEstimate.used,
+                                )} / 初始可用 ${formatTokenCount(
+                                  ACCOUNT_ESTIMATED_REMAINING_TOKENS,
+                                )}`}
                               </span>
                             </div>
                           </div>

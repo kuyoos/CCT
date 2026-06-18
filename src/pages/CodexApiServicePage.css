@@ -332,6 +332,20 @@
   white-space: nowrap;
 }
 
+.codex-api-service-summary-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-tertiary) 78%, transparent);
+}
+
+.codex-api-service-summary-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--success) 72%, var(--primary)));
+}
+
 .codex-api-service-grid {
   display: grid;
   gap: 10px;
