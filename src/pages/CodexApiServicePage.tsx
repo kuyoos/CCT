@@ -252,6 +252,32 @@ function estimateAccountRemainingTokens(
   return { remaining, used, percent: Math.round(remainingPercent) };
 }
 
+function resolveAccountQuotaRefreshTime(account: CodexAccount): number | null {
+  const candidates = [
+    account.usage_updated_at,
+    account.subscription_query_last_success_at,
+    account.subscription_query_last_attempt_at,
+    account.quota_error?.timestamp,
+    account.token_updated_at,
+  ].filter((value): value is number => Number.isFinite(value ?? NaN) && (value ?? 0) > 0);
+  return candidates.length ? Math.max(...candidates) : null;
+}
+
+function resolveAccountQuotaRefreshTimeLabel(
+  account: CodexAccount,
+  fallback = "--",
+): string {
+  const refreshedAt = resolveAccountQuotaRefreshTime(account);
+  return refreshedAt ? formatDateTime(refreshedAt) : fallback;
+}
+
+function resolveAccountsQuotaRefreshTime(accounts: CodexAccount[]): number | null {
+  const values = accounts
+    .map(resolveAccountQuotaRefreshTime)
+    .filter((value): value is number => Number.isFinite(value ?? NaN) && (value ?? 0) > 0);
+  return values.length ? Math.max(...values) : null;
+}
+
 function formatLatencyMs(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "--";
   if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
@@ -853,6 +879,13 @@ export function CodexApiServicePage() {
     () => summarizeCodexQuotaPool(memberAccounts),
     [memberAccounts],
   );
+  const accountQuotaRefreshedAt = useMemo(
+    () => resolveAccountsQuotaRefreshTime(memberAccounts),
+    [memberAccounts],
+  );
+  const accountQuotaRefreshedAtLabel = accountQuotaRefreshedAt
+    ? formatDateTime(accountQuotaRefreshedAt)
+    : "--";
   const baseUrl = state?.baseUrl || FALLBACK_BASE_URL;
   const displayBaseUrl =
     addressKind === "lan" && state?.lanBaseUrl ? state.lanBaseUrl : baseUrl;
@@ -3040,6 +3073,13 @@ export function CodexApiServicePage() {
                 </div>
               </div>
               <div className="codex-api-service-quota-strip">
+                <span>
+                  {t(
+                    "codex.apiService.accountStats.quotaRefreshedAt",
+                    "账号额度刷新时间",
+                  )}{" "}
+                  {accountQuotaRefreshedAtLabel}
+                </span>
                 {quotaPoolSummary.visiblePlans.length === 0 ? (
                   <span>
                     {t("codex.localAccess.emptyMembers", "当前集合暂无账号")}
@@ -3852,6 +3892,15 @@ export function CodexApiServicePage() {
                       </button>
                     </div>
                   </div>
+                  <div className="codex-api-service-account-stats-refresh-time">
+                    <span>
+                      {t(
+                        "codex.apiService.accountStats.quotaRefreshedAt",
+                        "账号额度刷新时间",
+                      )}
+                    </span>
+                    <strong>{accountQuotaRefreshedAtLabel}</strong>
+                  </div>
                   {accountStatsQuery.trim() && (
                     <button
                       type="button"
@@ -3979,6 +4028,12 @@ export function CodexApiServicePage() {
                                 )} / 初始可用 ${formatTokenCount(
                                   ACCOUNT_ESTIMATED_TOTAL_TOKENS,
                                 )}`}
+                              </span>
+                              <span>
+                                {`${t(
+                                  "codex.apiService.accountStats.quotaRefreshedAt",
+                                  "账号额度刷新时间",
+                                )} ${resolveAccountQuotaRefreshTimeLabel(account)}`}
                               </span>
                             </div>
                           </div>

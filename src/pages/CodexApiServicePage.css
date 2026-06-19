@@ -1259,7 +1259,7 @@
 
 .codex-api-service-account-stats-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) auto auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) auto minmax(160px, auto) auto;
   align-items: end;
   gap: 8px;
   min-width: 0;
@@ -1326,6 +1326,32 @@
 .codex-api-service-account-stats-direction button.active {
   background: color-mix(in srgb, var(--primary) 11%, transparent);
   color: var(--primary);
+}
+
+.codex-api-service-account-stats-refresh-time {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.codex-api-service-account-stats-refresh-time span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.codex-api-service-account-stats-refresh-time strong {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--codex-api-border-soft);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-surface) 76%, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 720;
+  white-space: nowrap;
 }
 
 .codex-api-service-account-stats-card {

@@ -20,6 +20,7 @@ use crate::modules::{
     codex_account, codex_oauth, codex_protocol, codex_wakeup, config, logger, process,
 };
 use base64::{engine::general_purpose, Engine as _};
+use chrono::Datelike;
 use futures_util::{SinkExt, StreamExt};
 use rand::{distributions::Alphanumeric, Rng};
 use reqwest::header::{HeaderName, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
@@ -5098,12 +5099,39 @@ fn load_local_access_usage_events_since(
         .map_err(|e| format!("解析 API 服务日志失败: {}", e))
 }
 
+fn start_of_local_day_ms(now: &chrono::DateTime<chrono::Local>) -> i64 {
+    now.date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|value| value.and_local_timezone(chrono::Local).single())
+        .map(|value| value.timestamp_millis())
+        .unwrap_or_else(now_ms)
+}
+
+fn start_of_local_week_ms(now: &chrono::DateTime<chrono::Local>) -> i64 {
+    let days_from_monday = i64::from(now.weekday().num_days_from_monday());
+    let week_start = now.date_naive() - chrono::Duration::days(days_from_monday);
+    week_start
+        .and_hms_opt(0, 0, 0)
+        .and_then(|value| value.and_local_timezone(chrono::Local).single())
+        .map(|value| value.timestamp_millis())
+        .unwrap_or_else(now_ms)
+}
+
+fn start_of_local_month_ms(now: &chrono::DateTime<chrono::Local>) -> i64 {
+    now.date_naive()
+        .with_day(1)
+        .and_then(|value| value.and_hms_opt(0, 0, 0))
+        .and_then(|value| value.and_local_timezone(chrono::Local).single())
+        .map(|value| value.timestamp_millis())
+        .unwrap_or_else(now_ms)
+}
+
 fn stats_range_since(stats_range: Option<&str>) -> Option<i64> {
-    let now = now_ms();
+    let now = chrono::Local::now();
     match stats_range.map(str::trim) {
-        Some("daily") => Some(now.saturating_sub(DAY_WINDOW_MS)),
-        Some("weekly") => Some(now.saturating_sub(WEEK_WINDOW_MS)),
-        Some("monthly") => Some(now.saturating_sub(MONTH_WINDOW_MS)),
+        Some("daily") => Some(start_of_local_day_ms(&now)),
+        Some("weekly") => Some(start_of_local_week_ms(&now)),
+        Some("monthly") => Some(start_of_local_month_ms(&now)),
         _ => None,
     }
 }
@@ -5423,10 +5451,11 @@ fn apply_usage_event_to_window(
     window.updated_at = window.updated_at.max(event.timestamp);
 }
 
-fn recompute_time_windows(stats: &mut CodexLocalAccessStats, now: i64) {
-    let day_since = now.saturating_sub(DAY_WINDOW_MS);
-    let week_since = now.saturating_sub(WEEK_WINDOW_MS);
-    let month_since = now.saturating_sub(MONTH_WINDOW_MS);
+fn recompute_time_windows(stats: &mut CodexLocalAccessStats, _now: i64) {
+    let local_now = chrono::Local::now();
+    let day_since = start_of_local_day_ms(&local_now);
+    let week_since = start_of_local_week_ms(&local_now);
+    let month_since = start_of_local_month_ms(&local_now);
 
     trim_recent_events(&mut stats.events, month_since);
 

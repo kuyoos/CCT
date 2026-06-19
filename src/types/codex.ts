@@ -49,6 +49,10 @@ export interface CodexAccount {
   reauth_reason?: string;
   quota?: CodexQuota;
   quota_error?: CodexQuotaErrorInfo;
+  usage_updated_at?: number;
+  subscription_query_last_attempt_at?: number;
+  subscription_query_last_success_at?: number;
+  subscription_query_next_retry_at?: number;
   tags?: string[];
   created_at: number;
   last_used: number;

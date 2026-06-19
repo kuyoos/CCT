@@ -45,9 +45,28 @@ function resolveAppliedTheme(theme: string): 'light' | 'dark' {
   return theme === 'dark' ? 'dark' : 'light';
 }
 
-function formatCount(value: number | null | undefined): string {
+function formatCompactCount(value: number | null | undefined): string {
   const normalized = typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+  if (normalized >= 1_000_000_000) return `${Number((normalized / 1_000_000_000).toFixed(1))}b`;
+  if (normalized >= 1_000_000) return `${Number((normalized / 1_000_000).toFixed(1))}m`;
+  if (normalized >= 1_000) return `${Number((normalized / 1_000).toFixed(1))}k`;
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(normalized);
+}
+
+function formatCompactTokenCount(value: number | null | undefined): string {
+  const normalized = typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+  if (normalized >= 1_000_000) return `${Number((normalized / 1_000_000).toFixed(2))}m`;
+  if (normalized >= 1_000) return `${Number((normalized / 1_000).toFixed(1))}k`;
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(normalized);
+}
+
+function formatLogTime(value: number | null | undefined): string {
+  if (!value || !Number.isFinite(value) || value <= 0) return '--';
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(value));
 }
 
 function formatLatency(value: number | null | undefined): string {
@@ -191,15 +210,15 @@ export function FloatingCardWindow() {
           <div className="floating-card-metrics">
             <div className="floating-card-metric">
               <span>{t('codex.localAccess.stats.requests', '总请求数')}</span>
-              <strong>{formatCount(summary.requestCount)}</strong>
+              <strong>{formatCompactCount(summary.requestCount)}</strong>
             </div>
             <div className="floating-card-metric">
               <span>{t('codex.localAccess.stats.tokens', '总 Token 数')}</span>
-              <strong>{formatCount(summary.totalTokens)}</strong>
+              <strong>{formatCompactTokenCount(summary.totalTokens)}</strong>
             </div>
             <div className="floating-card-metric">
               <span>{t('codex.apiService.accountStats.remainingAllTitle', '全部账号预估剩余')}</span>
-              <strong>{formatCount(summary.remainingTokens)}</strong>
+              <strong>{formatCompactTokenCount(summary.remainingTokens)}</strong>
             </div>
             <div className="floating-card-metric">
               <span>{t('codex.localAccess.stats.avgLatency', '平均延迟')}</span>
@@ -220,7 +239,8 @@ export function FloatingCardWindow() {
                       {log.success ? t('common.success', '成功') : t('common.failed', '失败')}
                     </span>
                     <span className="floating-card-account" title={log.email || log.accountId || '-'}>{log.email || log.accountId || '-'}</span>
-                    <span>{formatCount(log.totalTokens)} token</span>
+                    <span>{formatCompactTokenCount(log.totalTokens)} token</span>
+                    <span>{formatLogTime(log.timestamp)}</span>
                     <span>{formatLatency(log.latencyMs)}</span>
                   </div>
                 ))
