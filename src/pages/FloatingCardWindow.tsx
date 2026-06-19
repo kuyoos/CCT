@@ -16,17 +16,20 @@ import {
   setCurrentFloatingCardWindowAlwaysOnTop,
   setFloatingCardAlwaysOnTop,
 } from '../services/floatingCardService';
-import type {
+import {
   CodexLocalAccessState,
   CodexLocalAccessUsageEvent,
 } from '../types/codexLocalAccess';
+import type { CodexAccount } from '../types/codex';
+import { getCodexEffectiveQuotaPercentages } from '../types/codex';
+import { useCodexAccountStore } from '../stores/useCodexAccountStore';
 import { changeLanguage, normalizeLanguage } from '../i18n';
 import './FloatingCardWindow.css';
 
 const windowInstance = getCurrentWindow();
 const FLOATING_CARD_WIDTH = 720;
-const FLOATING_CARD_HEIGHT = 180;
-const ACCOUNT_ESTIMATED_REMAINING_TOKENS = 5_000_000;
+const FLOATING_CARD_HEIGHT = 210;
+const ACCOUNT_ESTIMATED_TOTAL_TOKENS = 5_000_000;
 const REFRESH_INTERVAL_MS = 5_000;
 
 type FloatingCardGeneralConfig = {
@@ -53,29 +56,20 @@ function formatLatency(value: number | null | undefined): string {
   return `${Math.round(normalized)}ms`;
 }
 
-function formatTime(timestamp: number): string {
-  if (!timestamp) return '-';
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(new Date(timestamp));
-}
-
-function resolveRemainingTokens(state: CodexLocalAccessState | null): number {
-  if (!state) return 0;
-  const memberCount = state.collection?.accountIds.length ?? state.memberCount ?? 0;
-  const accountUsageTotal = state.stats.accounts.reduce(
-    (sum, account) => sum + Math.max(0, Math.round(account.usage.totalTokens ?? 0)),
-    0,
-  );
-  const usedTokens = accountUsageTotal || state.stats.totals.totalTokens || 0;
-  return Math.max(0, memberCount * ACCOUNT_ESTIMATED_REMAINING_TOKENS - usedTokens);
+function resolveRemainingTokens(accounts: CodexAccount[], state: CodexLocalAccessState | null): number {
+  const memberIds = state?.collection?.accountIds ?? [];
+  const memberIdSet = new Set(memberIds);
+  const memberAccounts = accounts.filter((account) => memberIdSet.has(account.id));
+  return memberAccounts.reduce((sum, account) => {
+    const percentages = getCodexEffectiveQuotaPercentages(account.quota);
+    const remainingPercent = Math.max(0, Math.min(95, percentages.weekly ?? percentages.hourly ?? 0));
+    return sum + Math.round((remainingPercent / 95) * ACCOUNT_ESTIMATED_TOTAL_TOKENS);
+  }, 0);
 }
 
 export function FloatingCardWindow() {
   const { t } = useTranslation();
+  const { accounts, fetchAccounts } = useCodexAccountStore();
   const [state, setState] = useState<CodexLocalAccessState | null>(null);
   const [recentLogs, setRecentLogs] = useState<CodexLocalAccessUsageEvent[]>([]);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
@@ -120,6 +114,7 @@ export function FloatingCardWindow() {
       const [nextState, logPage] = await Promise.all([
         getCodexLocalAccessState(),
         queryCodexLocalAccessRequestLogs({ page: 1, pageSize: 3 }),
+        fetchAccounts(),
       ]);
       setState(nextState);
       setRecentLogs(logPage.events.slice(0, 3));
@@ -129,7 +124,7 @@ export function FloatingCardWindow() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchAccounts]);
 
   useEffect(() => {
     void windowInstance.setSize(new LogicalSize(FLOATING_CARD_WIDTH, FLOATING_CARD_HEIGHT));
@@ -163,11 +158,11 @@ export function FloatingCardWindow() {
     return {
       requestCount: totals?.requestCount ?? 0,
       totalTokens: totals?.totalTokens ?? 0,
-      remainingTokens: resolveRemainingTokens(state),
+      remainingTokens: resolveRemainingTokens(accounts, state),
       avgLatencyMs:
         totals && totals.requestCount > 0 ? totals.totalLatencyMs / totals.requestCount : 0,
     };
-  }, [state]);
+  }, [state, accounts]);
 
   return (
     <div className="floating-card-window" data-tauri-drag-region>
@@ -221,11 +216,12 @@ export function FloatingCardWindow() {
                 recentLogs.map((log) => (
                   <div key={log.requestId || `${log.timestamp}-${log.modelId}`} className="floating-card-log-row">
                     <span className="floating-card-model" title={log.modelId || '-'}>{log.modelId || '-'}</span>
-                    <span>{formatTime(log.timestamp)}</span>
                     <span className={log.success ? 'floating-card-success' : 'floating-card-failure'}>
                       {log.success ? t('common.success', '成功') : t('common.failed', '失败')}
                     </span>
+                    <span className="floating-card-account" title={log.email || log.accountId || '-'}>{log.email || log.accountId || '-'}</span>
                     <span>{formatCount(log.totalTokens)} token</span>
+                    <span>{formatLatency(log.latencyMs)}</span>
                   </div>
                 ))
               ) : (

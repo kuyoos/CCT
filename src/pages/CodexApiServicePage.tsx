@@ -50,6 +50,7 @@ import {
   type CodexAccountGroup,
 } from "../services/codexAccountGroupService";
 import type { CodexAccount } from "../types/codex";
+import { getCodexEffectiveQuotaPercentages } from "../types/codex";
 import type {
   CodexLocalAccessAddressKind,
   CodexLocalAccessAccountModelRule,
@@ -145,11 +146,7 @@ const REQUEST_LOG_PAGE_SIZE_STORAGE_KEY =
 const REQUEST_LOG_PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 const FALLBACK_BASE_URL = "http://127.0.0.1:1455/v1";
 const ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT = 95;
-const ACCOUNT_ESTIMATED_REMAINING_TOKENS = 5_000_000;
-const ACCOUNT_ESTIMATED_TOTAL_TOKENS = Math.round(
-  ACCOUNT_ESTIMATED_REMAINING_TOKENS /
-    (ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT / 100),
-);
+const ACCOUNT_ESTIMATED_TOTAL_TOKENS = 5_000_000;
 
 function normalizeAddressKind(
   value: string | null | undefined,
@@ -237,18 +234,22 @@ function formatTokenCount(value: number): string {
 }
 
 function estimateAccountRemainingTokens(
-  usage?: CodexLocalAccessUsageStats | null,
+  account: CodexAccount,
 ): { remaining: number; used: number; percent: number } {
-  const used = Math.max(0, Math.round(usage?.totalTokens ?? 0));
-  const remaining = Math.max(0, ACCOUNT_ESTIMATED_REMAINING_TOKENS - used);
-  const percent = Math.max(
+  const percentages = getCodexEffectiveQuotaPercentages(account.quota);
+  const remainingPercent = Math.max(
     0,
     Math.min(
       ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT,
-      Math.round((remaining / ACCOUNT_ESTIMATED_TOTAL_TOKENS) * 100),
+      percentages.weekly ?? percentages.hourly ?? 0,
     ),
   );
-  return { remaining, used, percent };
+  const remaining = Math.max(
+    0,
+    Math.round((remainingPercent / ACCOUNT_INITIAL_QUOTA_PROGRESS_PERCENT) * ACCOUNT_ESTIMATED_TOTAL_TOKENS),
+  );
+  const used = Math.max(0, ACCOUNT_ESTIMATED_TOTAL_TOKENS - remaining);
+  return { remaining, used, percent: Math.round(remainingPercent) };
 }
 
 function formatLatencyMs(value: number): string {
@@ -554,8 +555,8 @@ export function CodexApiServicePage() {
   const { accounts, fetchAccounts } = useCodexAccountStore();
   const [state, setState] = useState<CodexLocalAccessState | null>(null);
   const [groups, setGroups] = useState<CodexAccountGroup[]>([]);
-  const [activeTab, setActiveTab] = useState<ServiceTab>("overview");
-  const [statsLogTab, setStatsLogTab] = useState<StatsLogTab>("logs");
+  const [activeTab, setActiveTab] = useState<ServiceTab>("logs");
+  const [statsLogTab, setStatsLogTab] = useState<StatsLogTab>("accounts");
   const [statsRange, setStatsRange] = useState<StatsRangeKey>(() =>
     readStoredStatsRange(),
   );
@@ -714,11 +715,6 @@ export function CodexApiServicePage() {
     state?.accountHealth.forEach((item) => next.set(item.accountId, item));
     return next;
   }, [state?.accountHealth]);
-  const allStatsByAccountId = useMemo(() => {
-    const next = new Map<string, NonNullable<CodexLocalAccessStatsWindow>["accounts"][number]>();
-    stats?.accounts.forEach((item) => next.set(item.accountId, item));
-    return next;
-  }, [stats?.accounts]);
   const statsByAccountId = useMemo(() => {
     const next = new Map<string, NonNullable<CodexLocalAccessStatsWindow>["accounts"][number]>();
     selectedStatsWindow?.accounts.forEach((item) => next.set(item.accountId, item));
@@ -783,8 +779,7 @@ export function CodexApiServicePage() {
         return requestCount > 0 ? (usage?.successCount ?? 0) / requestCount : 0;
       }
       if (key === "remainingTokens") {
-        const allUsage = allStatsByAccountId.get(account.id)?.usage;
-        return estimateAccountRemainingTokens(allUsage).remaining;
+        return estimateAccountRemainingTokens(account).remaining;
       }
       if (key === "failures") return health?.consecutiveFailures ?? 0;
       return buildCodexAccountPresentation(account, t).displayName.toLowerCase();
@@ -827,17 +822,16 @@ export function CodexApiServicePage() {
     accountStatsSortKey,
     healthByAccountId,
     memberAccounts,
-    allStatsByAccountId,
     statsByAccountId,
     t,
   ]);
   const accountQuotaEstimateSummary = useMemo(() => {
     const accountCount = memberAccounts.length;
-    const estimatedTotal = accountCount * ACCOUNT_ESTIMATED_REMAINING_TOKENS;
-    const used = memberAccounts.reduce((sum, account) => {
-      const usage = allStatsByAccountId.get(account.id)?.usage;
-      return sum + Math.max(0, Math.round(usage?.totalTokens ?? 0));
-    }, 0);
+    const estimatedTotal = accountCount * ACCOUNT_ESTIMATED_TOTAL_TOKENS;
+    const used = memberAccounts.reduce(
+      (sum, account) => sum + estimateAccountRemainingTokens(account).used,
+      0,
+    );
     const remaining = Math.max(0, estimatedTotal - used);
     const percent =
       accountCount > 0
@@ -854,7 +848,7 @@ export function CodexApiServicePage() {
           )
         : 0;
     return { accountCount, estimatedTotal, remaining, used, percent };
-  }, [memberAccounts, allStatsByAccountId]);
+  }, [memberAccounts]);
   const quotaPoolSummary = useMemo(
     () => summarizeCodexQuotaPool(memberAccounts),
     [memberAccounts],
@@ -3888,10 +3882,7 @@ export function CodexApiServicePage() {
                       );
                       const health = healthByAccountId.get(account.id);
                       const stat = statsByAccountId.get(account.id);
-                      const allStat = allStatsByAccountId.get(account.id);
-                      const quotaEstimate = estimateAccountRemainingTokens(
-                        allStat?.usage,
-                      );
+                      const quotaEstimate = estimateAccountRemainingTokens(account);
                       return (
                         <div
                           key={account.id}
@@ -3986,7 +3977,7 @@ export function CodexApiServicePage() {
                                 {`已消耗 ${formatTokenCount(
                                   quotaEstimate.used,
                                 )} / 初始可用 ${formatTokenCount(
-                                  ACCOUNT_ESTIMATED_REMAINING_TOKENS,
+                                  ACCOUNT_ESTIMATED_TOTAL_TOKENS,
                                 )}`}
                               </span>
                             </div>
