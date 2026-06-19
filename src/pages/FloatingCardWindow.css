@@ -32,14 +32,14 @@ body.floating-card-overlay-root,
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 16px;
   background:
-    radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.3), transparent 34%),
-    radial-gradient(circle at 100% 12%, rgba(20, 184, 166, 0.16), transparent 30%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.92));
+    radial-gradient(circle at 8% 0%, rgba(59, 130, 246, 0.28), transparent 30%),
+    radial-gradient(circle at 98% 10%, rgba(20, 184, 166, 0.15), transparent 26%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.97), rgba(2, 6, 23, 0.93));
   box-shadow:
     0 22px 54px rgba(0, 0, 0, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -50,8 +50,12 @@ body.floating-card-overlay-root,
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   flex: 0 0 auto;
+}
+
+.floating-card-heading {
+  min-width: 0;
 }
 
 .floating-card-kicker {
@@ -64,12 +68,20 @@ body.floating-card-overlay-root,
 }
 
 .floating-card-title {
-  margin-top: 2px;
+  margin-top: 1px;
   color: #f8fafc;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 850;
-  line-height: 1.2;
+  line-height: 1.15;
   letter-spacing: -0.03em;
+}
+
+.floating-card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
 }
 
 .floating-card-status {
@@ -96,9 +108,47 @@ body.floating-card-overlay-root,
   color: #fca5a5;
 }
 
+.floating-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.floating-card-actions button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.floating-card-actions button:hover {
+  border-color: rgba(147, 197, 253, 0.4);
+  background: rgba(30, 41, 59, 0.86);
+  color: #f8fafc;
+}
+
+.floating-card-content {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .floating-card-metrics {
+  min-width: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
   flex: 0 0 auto;
 }
@@ -118,13 +168,15 @@ body.floating-card-overlay-root,
   font-weight: 750;
   line-height: 1.2;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .floating-card-metric strong {
   display: block;
-  margin-top: 5px;
+  margin-top: 6px;
   color: #f8fafc;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 850;
   line-height: 1.1;
   letter-spacing: -0.03em;
@@ -134,8 +186,8 @@ body.floating-card-overlay-root,
 }
 
 .floating-card-log-section {
+  min-width: 0;
   min-height: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -156,36 +208,34 @@ body.floating-card-overlay-root,
 .floating-card-log-list {
   min-height: 0;
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 6px;
   overflow: hidden;
 }
 
 .floating-card-log-row {
+  min-width: 0;
   min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(90px, 1.3fr) 70px 44px 82px;
+  align-items: center;
+  gap: 8px;
   padding: 7px 8px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.58);
   border: 1px solid rgba(148, 163, 184, 0.11);
-}
-
-.floating-card-log-main,
-.floating-card-log-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
 }
 
 .floating-card-model {
   min-width: 0;
-  flex: 1;
   color: #f8fafc;
   font-size: 12px;
   font-weight: 800;
-  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -193,10 +243,9 @@ body.floating-card-overlay-root,
 
 .floating-card-success,
 .floating-card-failure {
-  flex: 0 0 auto;
   font-size: 10px;
   font-weight: 850;
-  line-height: 1.2;
+  text-align: center;
 }
 
 .floating-card-success {
@@ -207,20 +256,11 @@ body.floating-card-overlay-root,
   color: #fca5a5;
 }
 
-.floating-card-log-meta {
-  margin-top: 4px;
-  color: #94a3b8;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
 .floating-card-empty {
-  flex: 1;
+  grid-row: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 64px;
   color: #94a3b8;
   font-size: 12px;
   font-weight: 750;
@@ -229,14 +269,14 @@ body.floating-card-overlay-root,
 
 .floating-card-error {
   flex: 0 0 auto;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 10px;
   border: 1px solid rgba(248, 113, 113, 0.28);
   background: rgba(127, 29, 29, 0.26);
   color: #fecaca;
   font-size: 10px;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

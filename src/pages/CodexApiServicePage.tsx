@@ -83,7 +83,7 @@ import "./CodexApiServicePage.css";
 
 type ServiceTab = "overview" | "keys" | "accounts" | "models" | "logs";
 type StatsLogTab = "accounts" | "logs" | "models" | "keys";
-type StatsRangeKey = "daily" | "weekly" | "monthly";
+type StatsRangeKey = "all" | "daily" | "weekly" | "monthly";
 type CopyField =
   | "baseUrl"
   | "lanBaseUrl"
@@ -174,15 +174,15 @@ function persistAddressKind(value: CodexLocalAccessAddressKind): void {
 }
 
 function normalizeStatsRange(value: string | null | undefined): StatsRangeKey {
-  if (value === "weekly" || value === "monthly") return value;
-  return "daily";
+  if (value === "daily" || value === "weekly" || value === "monthly") return value;
+  return "all";
 }
 
 function readStoredStatsRange(): StatsRangeKey {
   try {
     return normalizeStatsRange(localStorage.getItem(STATS_RANGE_STORAGE_KEY));
   } catch {
-    return "daily";
+    return "all";
   }
 }
 
@@ -677,6 +677,16 @@ export function CodexApiServicePage() {
   const selectedStatsWindow =
     useMemo<CodexLocalAccessStatsWindow | null>(() => {
       if (!stats) return null;
+      if (statsRange === "all") {
+        return {
+          since: stats.since,
+          updatedAt: stats.updatedAt,
+          totals: stats.totals,
+          accounts: stats.accounts,
+          models: stats.models,
+          apiKeys: stats.apiKeys,
+        };
+      }
       return stats[statsRange];
     }, [stats, statsRange]);
   const totals = selectedStatsWindow?.totals;
@@ -1121,7 +1131,7 @@ export function CodexApiServicePage() {
       .queryCodexLocalAccessRequestLogs({
         page: requestLogPage,
         pageSize: requestLogPageSize,
-        statsRange,
+        statsRange: statsRange === "all" ? null : statsRange,
         modelQuery: requestLogModelQuery,
         accountQuery: requestLogAccountQuery,
         apiKeyQuery: requestLogApiKeyQuery,
@@ -2447,6 +2457,10 @@ export function CodexApiServicePage() {
     },
   ];
   const statsRangeOptions = [
+    {
+      key: "all" as const,
+      label: t("codex.localAccess.statsRange.all", "全部"),
+    },
     {
       key: "daily" as const,
       label: t("codex.localAccess.statsRange.daily", "日"),
