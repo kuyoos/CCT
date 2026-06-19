@@ -1,38 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pin, PinOff, RefreshCw, X } from 'lucide-react';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import { TauriEvent, listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
-import { buildCodexAccountPresentation, type UnifiedAccountPresentation } from '../presentation/platformAccountPresentation';
 import {
-  getFloatingCardContext,
-  hideCurrentFloatingCardWindow,
-  hideFloatingCardWindow,
-  saveFloatingCardPosition,
-  setCurrentFloatingCardWindowAlwaysOnTop,
-  setFloatingCardAlwaysOnTop,
-  showMainWindowAndNavigate,
-} from '../services/floatingCardService';
-import { useCodexAccountStore } from '../stores/useCodexAccountStore';
-import { useCodexInstanceStore } from '../stores/useCodexInstanceStore';
-import type { InstanceProfile } from '../types/instance';
-import { maskSensitiveValue } from '../utils/privacy';
-import { getRecommendedCodexAccount, resolveCurrentOrMostRecentAccount } from '../utils/floatingCardSelectors';
+  getCodexLocalAccessState,
+  queryCodexLocalAccessRequestLogs,
+} from '../services/codexLocalAccessService';
+import type {
+  CodexLocalAccessState,
+  CodexLocalAccessUsageEvent,
+} from '../types/codexLocalAccess';
 import { changeLanguage, normalizeLanguage } from '../i18n';
 import './FloatingCardWindow.css';
 
 const windowInstance = getCurrentWindow();
-const FLOATING_CARD_WINDOW_LABEL = 'floating-card';
-const INSTANCE_FLOATING_CARD_WINDOW_LABEL_PREFIX = 'instance-floating-card-';
-const FLOATING_CARD_BASE_HEIGHT = 290;
-const FLOATING_CARD_MAX_HEIGHT = 520;
+const FLOATING_CARD_WIDTH = 360;
+const FLOATING_CARD_HEIGHT = 260;
+const ACCOUNT_ESTIMATED_REMAINING_TOKENS = 5_000_000;
+const REFRESH_INTERVAL_MS = 5_000;
 
 type FloatingCardGeneralConfig = {
   language: string;
   theme: string;
-  floating_card_always_on_top?: boolean;
 };
 
 function resolveAppliedTheme(theme: string): 'light' | 'dark' {
@@ -42,26 +33,38 @@ function resolveAppliedTheme(theme: string): 'light' | 'dark' {
   return theme === 'dark' ? 'dark' : 'light';
 }
 
-function findInstanceById(instances: InstanceProfile[], instanceId: string): InstanceProfile | null {
-  return instances.find((instance) => instance.id === instanceId) ?? null;
+function formatCount(value: number | null | undefined): string {
+  const normalized = typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(normalized);
+}
+
+function formatTime(timestamp: number): string {
+  if (!timestamp) return '-';
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
+function resolveRemainingTokens(state: CodexLocalAccessState | null): number {
+  if (!state) return 0;
+  const memberCount = state.collection?.accountIds.length ?? state.memberCount ?? 0;
+  const accountUsageTotal = state.stats.accounts.reduce(
+    (sum, account) => sum + Math.max(0, Math.round(account.usage.totalTokens ?? 0)),
+    0,
+  );
+  const usedTokens = accountUsageTotal || state.stats.totals.totalTokens || 0;
+  return Math.max(0, memberCount * ACCOUNT_ESTIMATED_REMAINING_TOKENS - usedTokens);
 }
 
 export function FloatingCardWindow() {
   const { t } = useTranslation();
-  const currentWindowLabel = windowInstance.label;
-  const isPrimaryFloatingCardWindow = currentWindowLabel === FLOATING_CARD_WINDOW_LABEL;
-  const isInstanceFloatingCardWindow = currentWindowLabel.startsWith(
-    INSTANCE_FLOATING_CARD_WINDOW_LABEL_PREFIX,
-  );
-
-  const { accounts, currentAccount, fetchAccounts, fetchCurrentAccount, switchAccount, refreshQuota } = useCodexAccountStore();
-  const { instances, refreshInstances, updateInstance, startInstance } = useCodexInstanceStore();
-  const [instanceContext, setInstanceContext] = useState<Awaited<ReturnType<typeof getFloatingCardContext>>>(null);
-  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
-  const [privacyModeEnabled, setPrivacyModeEnabled] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [state, setState] = useState<CodexLocalAccessState | null>(null);
+  const [recentLogs, setRecentLogs] = useState<CodexLocalAccessUsageEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +72,6 @@ export function FloatingCardWindow() {
       try {
         const config = await invoke<FloatingCardGeneralConfig>('get_general_config');
         if (cancelled) return;
-        setAlwaysOnTop(Boolean(config.floating_card_always_on_top));
         const language = normalizeLanguage(config.language);
         await changeLanguage(language);
         document.documentElement.setAttribute('data-theme', resolveAppliedTheme(config.theme));
@@ -88,7 +90,7 @@ export function FloatingCardWindow() {
     listen(TauriEvent.WINDOW_MOVED, async () => {
       try {
         const position = await windowInstance.outerPosition();
-        await saveFloatingCardPosition(position.x, position.y);
+        await invoke('save_floating_card_position', { x: position.x, y: position.y });
       } catch {}
     }).then((handler) => {
       unlisten = handler;
@@ -96,219 +98,95 @@ export function FloatingCardWindow() {
     return () => unlisten?.();
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const hydrate = async () => {
-      setLoading(true);
-      try {
-        await Promise.all([fetchAccounts(), fetchCurrentAccount(), refreshInstances()]);
-        if (isInstanceFloatingCardWindow) {
-          const context = await getFloatingCardContext(currentWindowLabel);
-          if (!cancelled) setInstanceContext(context);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentWindowLabel, fetchAccounts, fetchCurrentAccount, isInstanceFloatingCardWindow, refreshInstances]);
-
-  const boundInstance = useMemo(() => {
-    if (!instanceContext) return null;
-    return findInstanceById(instances, instanceContext.instanceId);
-  }, [instanceContext, instances]);
-
-  const viewedAccount = useMemo(() => {
-    if (instanceContext?.boundAccountId) {
-      return accounts.find((account) => account.id === instanceContext.boundAccountId) ?? null;
-    }
-    return resolveCurrentOrMostRecentAccount(accounts, currentAccount?.id);
-  }, [accounts, currentAccount?.id, instanceContext?.boundAccountId]);
-
-  const presentation = useMemo<UnifiedAccountPresentation | null>(() => {
-    return viewedAccount ? buildCodexAccountPresentation(viewedAccount, t) : null;
-  }, [t, viewedAccount]);
-
-  const recommendedAccount = useMemo(() => {
-    return getRecommendedCodexAccount(accounts, viewedAccount?.id ?? currentAccount?.id);
-  }, [accounts, currentAccount?.id, viewedAccount?.id]);
-
-  const canSwitch = Boolean(selectedAccountId && selectedAccountId !== viewedAccount?.id);
-
-  const updateHeight = useCallback(async () => {
-    const quotaCount = presentation?.quotaItems.length ?? 0;
-    const nextHeight = Math.min(FLOATING_CARD_MAX_HEIGHT, FLOATING_CARD_BASE_HEIGHT + quotaCount * 34);
+  const loadStats = useCallback(async () => {
     try {
-      await windowInstance.setSize(new LogicalSize(360, nextHeight));
-    } catch {}
-  }, [presentation?.quotaItems.length]);
+      const [nextState, logPage] = await Promise.all([
+        getCodexLocalAccessState(),
+        queryCodexLocalAccessRequestLogs({ page: 1, pageSize: 3 }),
+      ]);
+      setState(nextState);
+      setRecentLogs(logPage.events.slice(0, 3));
+      setError(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void updateHeight();
-  }, [updateHeight]);
+    void windowInstance.setSize(new LogicalSize(FLOATING_CARD_WIDTH, FLOATING_CARD_HEIGHT));
+    void loadStats();
+    const timer = window.setInterval(() => void loadStats(), REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [loadStats]);
 
-  const mask = useCallback(
-    (value?: string | null) => maskSensitiveValue(value, privacyModeEnabled),
-    [privacyModeEnabled],
-  );
-
-  const handleRefresh = async () => {
-    if (!viewedAccount) return;
-    setLoading(true);
-    setMessage(null);
-    try {
-      await refreshQuota(viewedAccount.id);
-      await fetchAccounts();
-      setMessage(t('common.refreshSuccess', '刷新成功'));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSwitch = async (accountId: string) => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      if (instanceContext?.instanceId && boundInstance) {
-        await updateInstance({ instanceId: instanceContext.instanceId, bindAccountId: accountId });
-      } else {
-        await switchAccount(accountId);
-      }
-      await fetchCurrentAccount();
-      await refreshInstances();
-      setSelectedAccountId(null);
-      setMessage(t('common.switchSuccess', '切换成功'));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStartInstance = async () => {
-    if (!instanceContext?.instanceId) return;
-    setLoading(true);
-    try {
-      await startInstance(instanceContext.instanceId);
-      setMessage(t('instances.status.running', '已启动'));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAlwaysOnTop = async () => {
-    const next = !alwaysOnTop;
-    setAlwaysOnTop(next);
-    try {
-      if (isPrimaryFloatingCardWindow) {
-        await setFloatingCardAlwaysOnTop(next);
-      } else {
-        await setCurrentFloatingCardWindowAlwaysOnTop(next);
-      }
-    } catch {}
-  };
-
-  const handleClose = async () => {
-    if (isPrimaryFloatingCardWindow) {
-      await hideFloatingCardWindow();
-    } else {
-      await hideCurrentFloatingCardWindow();
-    }
-  };
-
-  const goMain = async () => {
-    await showMainWindowAndNavigate('codex');
-    await handleClose();
-  };
+  const summary = useMemo(() => {
+    const totals = state?.stats.totals;
+    return {
+      requestCount: totals?.requestCount ?? 0,
+      totalTokens: totals?.totalTokens ?? 0,
+      remainingTokens: resolveRemainingTokens(state),
+    };
+  }, [state]);
 
   return (
-    <div className="floating-card-window">
-      <div className="floating-card-titlebar" data-tauri-drag-region>
-        <div className="floating-card-title" data-tauri-drag-region>
-          <span>{isInstanceFloatingCardWindow ? instanceContext?.instanceName || 'Codex Instance' : 'Codex'}</span>
-        </div>
-        <div className="floating-card-window-actions">
-          <button type="button" onClick={() => setPrivacyModeEnabled((value) => !value)}>
-            {privacyModeEnabled ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
-          <button type="button" onClick={handleAlwaysOnTop}>
-            {alwaysOnTop ? <PinOff size={14} /> : <Pin size={14} />}
-          </button>
-          <button type="button" onClick={handleClose}><X size={14} /></button>
-        </div>
-      </div>
-
-      <div className="floating-card-body">
-        {presentation ? (
-          <>
-            <div className="floating-card-account">
-              <div>
-                <div className="floating-card-account-name">{mask(presentation.displayName)}</div>
-                <div className={`floating-card-plan ${presentation.planClass}`}>{presentation.planLabel}</div>
-              </div>
-              <button type="button" className="floating-card-icon-button" onClick={handleRefresh} disabled={loading}>
-                <RefreshCw size={15} className={loading ? 'loading-spinner' : ''} />
-              </button>
-            </div>
-
-            <div className="floating-card-quotas">
-              {presentation.quotaItems.length > 0 ? presentation.quotaItems.map((item) => (
-                <div key={item.key} className="floating-card-quota-row" title={item.hintText || item.resetText || ''}>
-                  <span>{item.label}</span>
-                  <strong className={item.quotaClass}>{item.valueText}</strong>
-                </div>
-              )) : (
-                <div className="floating-card-empty">{t('instances.quota.empty', '暂无配额缓存')}</div>
-              )}
-            </div>
-
-            {accounts.length > 1 && (
-              <div className="floating-card-switcher">
-                <select
-                  value={selectedAccountId ?? viewedAccount?.id ?? ''}
-                  onChange={(event) => setSelectedAccountId(event.target.value)}
-                >
-                  {accounts.map((account) => {
-                    const item = buildCodexAccountPresentation(account, t);
-                    return <option key={account.id} value={account.id}>{item.displayName}</option>;
-                  })}
-                </select>
-                <button type="button" onClick={() => selectedAccountId && handleSwitch(selectedAccountId)} disabled={!canSwitch || loading}>
-                  {t('common.shared.switchAccount', '切换账号')}
-                </button>
-              </div>
-            )}
-
-            {recommendedAccount && (
-              <button type="button" className="floating-card-secondary-action" onClick={() => handleSwitch(recommendedAccount.id)} disabled={loading}>
-                {t('floatingCard.switchRecommended', '切换到推荐账号')}
-              </button>
-            )}
-
-            {isInstanceFloatingCardWindow && (
-              <button type="button" className="floating-card-secondary-action" onClick={handleStartInstance} disabled={loading}>
-                {t('instances.actions.start', '启动实例')}
-              </button>
-            )}
-          </>
-        ) : (
-          <div className="floating-card-empty">
-            {loading ? t('common.loading', '加载中...') : t('codex.noAccounts', '暂无 Codex 账号')}
+    <div className="floating-card-window" data-tauri-drag-region>
+      <div className="floating-card-panel" data-tauri-drag-region>
+        <div className="floating-card-header" data-tauri-drag-region>
+          <div>
+            <div className="floating-card-kicker">API Service</div>
+            <div className="floating-card-title">{t('floatingCard.apiStatsTitle', '请求统计')}</div>
           </div>
-        )}
+          <div className={`floating-card-status ${state?.running ? 'is-running' : 'is-stopped'}`}>
+            {state?.running ? t('common.running', '运行中') : t('common.stopped', '未运行')}
+          </div>
+        </div>
 
-        {message && <div className="floating-card-message">{message}</div>}
-      </div>
+        <div className="floating-card-metrics">
+          <div className="floating-card-metric">
+            <span>{t('floatingCard.totalRequests', '总请求数')}</span>
+            <strong>{formatCount(summary.requestCount)}</strong>
+          </div>
+          <div className="floating-card-metric">
+            <span>{t('floatingCard.totalTokens', '总 Token')}</span>
+            <strong>{formatCount(summary.totalTokens)}</strong>
+          </div>
+          <div className="floating-card-metric">
+            <span>{t('floatingCard.remainingTokens', '剩余 Token')}</span>
+            <strong>{formatCount(summary.remainingTokens)}</strong>
+          </div>
+        </div>
 
-      <div className="floating-card-footer">
-        <button type="button" onClick={goMain}>{t('common.openMainWindow', '打开主窗口')}</button>
+        <div className="floating-card-log-section">
+          <div className="floating-card-section-title">
+            {t('floatingCard.latestRequests', '最新三条模型请求')}
+          </div>
+          <div className="floating-card-log-list">
+            {recentLogs.length > 0 ? (
+              recentLogs.map((log) => (
+                <div key={log.requestId || `${log.timestamp}-${log.modelId}`} className="floating-card-log-row">
+                  <div className="floating-card-log-main">
+                    <span className="floating-card-model" title={log.modelId || '-'}>{log.modelId || '-'}</span>
+                    <span className={log.success ? 'floating-card-success' : 'floating-card-failure'}>
+                      {log.success ? t('common.success', '成功') : t('common.failed', '失败')}
+                    </span>
+                  </div>
+                  <div className="floating-card-log-meta">
+                    <span>{formatTime(log.timestamp)}</span>
+                    <span>{formatCount(log.totalTokens)} token</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="floating-card-empty">
+                {loading ? t('common.loading', '加载中...') : t('floatingCard.noRequestLogs', '暂无请求日志')}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {error && <div className="floating-card-error">{error}</div>}
       </div>
     </div>
   );
