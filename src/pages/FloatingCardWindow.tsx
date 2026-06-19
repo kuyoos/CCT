@@ -24,8 +24,8 @@ import { changeLanguage, normalizeLanguage } from '../i18n';
 import './FloatingCardWindow.css';
 
 const windowInstance = getCurrentWindow();
-const FLOATING_CARD_WIDTH = 620;
-const FLOATING_CARD_HEIGHT = 240;
+const FLOATING_CARD_WIDTH = 720;
+const FLOATING_CARD_HEIGHT = 180;
 const ACCOUNT_ESTIMATED_REMAINING_TOKENS = 5_000_000;
 const REFRESH_INTERVAL_MS = 5_000;
 

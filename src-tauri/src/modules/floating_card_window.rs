@@ -12,6 +12,8 @@ pub const FLOATING_CARD_WINDOW_LABEL: &str = "floating-card";
 pub const INSTANCE_FLOATING_CARD_WINDOW_LABEL_PREFIX: &str = "instance-floating-card-";
 pub const FLOATING_CARD_CONTEXT_CHANGED_EVENT: &str = "floating-card:context-changed";
 const FLOATING_CARD_DEFAULT_MARGIN: i32 = 20;
+const FLOATING_CARD_WINDOW_WIDTH: f64 = 720.0;
+const FLOATING_CARD_WINDOW_HEIGHT: f64 = 180.0;
 const INSTANCE_FLOATING_CARD_WINDOW_OFFSET_STEP: i32 = 28;
 const FLOATING_CARD_NATIVE_CORNER_RADIUS: f64 = 15.0;
 static FLOATING_CARD_INSTANCE_CONTEXTS: LazyLock<
@@ -127,6 +129,10 @@ fn ensure_floating_card_window_with_label<R: Runtime>(
     label: &str,
 ) -> Result<(WebviewWindow<R>, bool), String> {
     if let Some(window) = app.get_webview_window(label) {
+        let _ = window.set_size(tauri::LogicalSize::new(
+            FLOATING_CARD_WINDOW_WIDTH,
+            FLOATING_CARD_WINDOW_HEIGHT,
+        ));
         apply_native_floating_card_window_shape(&window)?;
         return Ok((window, false));
     }
@@ -137,6 +143,10 @@ fn ensure_floating_card_window_with_label<R: Runtime>(
         .build()
         .map_err(|err| err.to_string())?;
 
+    let _ = window.set_size(tauri::LogicalSize::new(
+        FLOATING_CARD_WINDOW_WIDTH,
+        FLOATING_CARD_WINDOW_HEIGHT,
+    ));
     apply_native_floating_card_window_shape(&window)?;
     logger::log_info(&format!("[FloatingCard] 悬浮卡片窗口已创建: {}", label));
     Ok((window, true))

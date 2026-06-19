@@ -714,6 +714,11 @@ export function CodexApiServicePage() {
     state?.accountHealth.forEach((item) => next.set(item.accountId, item));
     return next;
   }, [state?.accountHealth]);
+  const allStatsByAccountId = useMemo(() => {
+    const next = new Map<string, NonNullable<CodexLocalAccessStatsWindow>["accounts"][number]>();
+    stats?.accounts.forEach((item) => next.set(item.accountId, item));
+    return next;
+  }, [stats?.accounts]);
   const statsByAccountId = useMemo(() => {
     const next = new Map<string, NonNullable<CodexLocalAccessStatsWindow>["accounts"][number]>();
     selectedStatsWindow?.accounts.forEach((item) => next.set(item.accountId, item));
@@ -778,7 +783,8 @@ export function CodexApiServicePage() {
         return requestCount > 0 ? (usage?.successCount ?? 0) / requestCount : 0;
       }
       if (key === "remainingTokens") {
-        return estimateAccountRemainingTokens(usage).remaining;
+        const allUsage = allStatsByAccountId.get(account.id)?.usage;
+        return estimateAccountRemainingTokens(allUsage).remaining;
       }
       if (key === "failures") return health?.consecutiveFailures ?? 0;
       return buildCodexAccountPresentation(account, t).displayName.toLowerCase();
@@ -821,6 +827,7 @@ export function CodexApiServicePage() {
     accountStatsSortKey,
     healthByAccountId,
     memberAccounts,
+    allStatsByAccountId,
     statsByAccountId,
     t,
   ]);
@@ -828,7 +835,7 @@ export function CodexApiServicePage() {
     const accountCount = memberAccounts.length;
     const estimatedTotal = accountCount * ACCOUNT_ESTIMATED_REMAINING_TOKENS;
     const used = memberAccounts.reduce((sum, account) => {
-      const usage = statsByAccountId.get(account.id)?.usage;
+      const usage = allStatsByAccountId.get(account.id)?.usage;
       return sum + Math.max(0, Math.round(usage?.totalTokens ?? 0));
     }, 0);
     const remaining = Math.max(0, estimatedTotal - used);
@@ -847,7 +854,7 @@ export function CodexApiServicePage() {
           )
         : 0;
     return { accountCount, estimatedTotal, remaining, used, percent };
-  }, [memberAccounts, statsByAccountId]);
+  }, [memberAccounts, allStatsByAccountId]);
   const quotaPoolSummary = useMemo(
     () => summarizeCodexQuotaPool(memberAccounts),
     [memberAccounts],
@@ -3881,8 +3888,9 @@ export function CodexApiServicePage() {
                       );
                       const health = healthByAccountId.get(account.id);
                       const stat = statsByAccountId.get(account.id);
+                      const allStat = allStatsByAccountId.get(account.id);
                       const quotaEstimate = estimateAccountRemainingTokens(
-                        stat?.usage,
+                        allStat?.usage,
                       );
                       return (
                         <div
