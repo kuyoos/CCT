@@ -33,6 +33,13 @@ let codexAccountsCacheWriteTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingCodexAccountsCache: CodexAccountCacheItem[] | null = null;
 let codexCurrentAccountCacheWriteTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingCodexCurrentAccountCache: CodexAccountCacheItem | null | undefined;
+let codexQuotaRefreshQueue: Promise<unknown> = Promise.resolve();
+
+const enqueueCodexQuotaRefresh = async <T>(task: () => Promise<T>): Promise<T> => {
+  const run = codexQuotaRefreshQueue.catch(() => undefined).then(task);
+  codexQuotaRefreshQueue = run.catch(() => undefined);
+  return run;
+};
 
 type CodexAccountCacheItem = Omit<CodexAccount, 'tokens' | 'quota'> & {
   tokens?: Partial<CodexAccount['tokens']>;
@@ -73,6 +80,7 @@ const stripCodexQuotaForCache = (quota?: CodexQuota): CodexQuota | undefined => 
     weekly_reset_time: quota.weekly_reset_time,
     weekly_window_minutes: quota.weekly_window_minutes,
     weekly_window_present: quota.weekly_window_present,
+    raw_data: quota.raw_data,
   };
 };
 
@@ -398,28 +406,31 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     }
   },
   
-  refreshQuota: async (accountId: string) => {
-    try {
-      return await codexService.refreshCodexQuota(accountId);
-    } finally {
+  refreshQuota: async (accountId: string) =>
+    enqueueCodexQuotaRefresh(async () => {
+      try {
+        return await codexService.refreshCodexQuota(accountId);
+      } finally {
+        await get().fetchAccounts();
+        await get().fetchCurrentAccount();
+      }
+    }),
+
+  refreshSubscriptionInfo: async (accountId: string) =>
+    enqueueCodexQuotaRefresh(async () => {
+      const account = await codexService.refreshCodexSubscriptionInfo(accountId);
       await get().fetchAccounts();
       await get().fetchCurrentAccount();
-    }
-  },
-
-  refreshSubscriptionInfo: async (accountId: string) => {
-    const account = await codexService.refreshCodexSubscriptionInfo(accountId);
-    await get().fetchAccounts();
-    await get().fetchCurrentAccount();
-    return account;
-  },
+      return account;
+    }),
   
-  refreshAllQuotas: async () => {
-    const successCount = await codexService.refreshAllCodexQuotas();
-    await get().fetchAccounts();
-    await get().fetchCurrentAccount();
-    return successCount;
-  },
+  refreshAllQuotas: async () =>
+    enqueueCodexQuotaRefresh(async () => {
+      const successCount = await codexService.refreshAllCodexQuotas();
+      await get().fetchAccounts();
+      await get().fetchCurrentAccount();
+      return successCount;
+    }),
 
   hydrateAccountProfilesIfNeeded: async (accountIds?: string[]) => {
     const now = Date.now();

@@ -3,6 +3,7 @@ use crate::modules::{codex_account, logger};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, REFERER, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::sync::{Mutex, OnceCell};
 
 // 使用 wham/usage 端点（Quotio 使用的）
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
@@ -18,6 +19,16 @@ const CHATGPT_WEB_REFERER: &str = "https://chatgpt.com/";
 const CHATGPT_WEB_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 const SUBSCRIPTION_RETRY_INTERVAL_SECONDS: i64 = 30 * 60;
 const HTTP_ERROR_BODY_DISPLAY_MAX_CHARS: usize = 4000;
+
+static QUOTA_REFRESH_QUEUE: OnceCell<Mutex<()>> = OnceCell::const_new();
+
+async fn quota_refresh_queue_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    QUOTA_REFRESH_QUEUE
+        .get_or_init(|| async { Mutex::new(()) })
+        .await
+        .lock()
+        .await
+}
 
 fn get_header_value(headers: &HeaderMap, name: &str) -> String {
     headers
@@ -1127,6 +1138,7 @@ async fn refresh_account_quota_once(
 }
 
 pub async fn refresh_account_quota(account_id: &str) -> Result<CodexQuota, String> {
+    let _guard = quota_refresh_queue_lock().await;
     refresh_account_quota_once(account_id, RefreshQuotaOptions::default()).await
 }
 
@@ -1134,6 +1146,7 @@ pub async fn refresh_account_quota_with_options(
     account_id: &str,
     options: RefreshQuotaOptions,
 ) -> Result<CodexQuota, String> {
+    let _guard = quota_refresh_queue_lock().await;
     refresh_account_quota_once(account_id, options).await
 }
 
@@ -1185,39 +1198,16 @@ pub async fn refresh_account_subscription_info(
 
 /// 刷新所有账号配额
 pub async fn refresh_all_quotas() -> Result<Vec<(String, Result<CodexQuota, String>)>, String> {
-    use futures::future::join_all;
-    use std::sync::Arc;
-    use tokio::sync::Semaphore;
-
-    const MAX_CONCURRENT: usize = 5;
     let accounts: Vec<_> = codex_account::list_accounts()
         .into_iter()
         .filter(|account| !account.is_api_key_auth() || is_new_api_account(account))
         .collect();
 
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
-    let tasks: Vec<_> = accounts
-        .into_iter()
-        .map(|account| {
-            let account_id = account.id;
-            let semaphore = semaphore.clone();
-            async move {
-                let _permit = semaphore
-                    .acquire_owned()
-                    .await
-                    .map_err(|e| format!("获取 Codex 刷新并发许可失败: {}", e))?;
-                let result = refresh_account_quota(&account_id).await;
-                Ok::<(String, Result<CodexQuota, String>), String>((account_id, result))
-            }
-        })
-        .collect();
-
-    let mut results = Vec::with_capacity(tasks.len());
-    for task in join_all(tasks).await {
-        match task {
-            Ok(item) => results.push(item),
-            Err(err) => return Err(err),
-        }
+    let mut results = Vec::with_capacity(accounts.len());
+    for account in accounts {
+        let account_id = account.id;
+        let result = refresh_account_quota(&account_id).await;
+        results.push((account_id, result));
     }
 
     Ok(results)

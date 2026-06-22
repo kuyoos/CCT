@@ -252,14 +252,20 @@ function estimateAccountRemainingTokens(
   return { remaining, used, percent: Math.round(remainingPercent) };
 }
 
+function normalizeAccountTimestamp(value: number | null | undefined): number | null {
+  if (!Number.isFinite(value ?? NaN) || !value || value <= 0) return null;
+  return value < 1_000_000_000_000 ? value * 1000 : value;
+}
+
 function resolveAccountQuotaRefreshTime(account: CodexAccount): number | null {
   const candidates = [
     account.usage_updated_at,
     account.subscription_query_last_success_at,
     account.subscription_query_last_attempt_at,
     account.quota_error?.timestamp,
-    account.token_updated_at,
-  ].filter((value): value is number => Number.isFinite(value ?? NaN) && (value ?? 0) > 0);
+  ]
+    .map(normalizeAccountTimestamp)
+    .filter((value): value is number => Number.isFinite(value ?? NaN) && (value ?? 0) > 0);
   return candidates.length ? Math.max(...candidates) : null;
 }
 
